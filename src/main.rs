@@ -30,6 +30,24 @@ fn main() {
                 }
             }
         }
+        Command::CatFile(hash) => {
+            let repo = Repository::new(".");
+            match repo.get_object(&hash) {
+                Ok(data) => {
+                    // Convert bytes to string and print
+                    if let Ok(content) = String::from_utf8(data) {
+                        print!("{}", content);
+                    } else {
+                        eprintln!("Error: Object content is not valid UTF-8");
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

@@ -82,4 +82,18 @@ impl Repository {
 
         Ok(hash_str)
     }
+
+    pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
+        // Validate hash format (should be 40 hex characters)
+        if hash.len() != 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("Invalid hash format".to_string());
+        }
+
+        // Create object path
+        let (dir, file) = hash.split_at(2);
+        let object_path = format!("{}/objects/{}/{}", self.gitdir, dir, file);
+
+        // Read the object file
+        fs::read(&object_path).map_err(|e| format!("Failed to read object: {}", e))
+    }
 }
