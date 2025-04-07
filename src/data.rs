@@ -3,7 +3,7 @@ use sha1::{Digest, Sha1};
 use std::fs;
 use std::path::Path;
 
-const GIT_DIR: &str = ".bgit";
+pub const GIT_DIR: &str = ".bgit";
 
 #[derive(Debug)]
 enum ObjectType {
