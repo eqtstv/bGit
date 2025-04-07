@@ -15,7 +15,6 @@ fn main() {
         }
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
-            eprintln!("Usage: bgit init");
             std::process::exit(1);
         }
     }
