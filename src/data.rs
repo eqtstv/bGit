@@ -1,4 +1,3 @@
-use hex;
 use sha1::{Digest, Sha1};
 use std::fs;
 use std::path::Path;
