@@ -132,13 +132,19 @@ impl Repository {
             .position(|&b| b == 0)
             .ok_or_else(|| "Invalid object format: missing null byte".to_string())?;
 
+        // Convert the header to a string
         let header = String::from_utf8(object_data[..header_end].to_vec())
             .map_err(|_| "Invalid header encoding".to_string())?;
 
+        // Split the header into parts
         let mut parts = header.split_whitespace();
+
+        // Get the object type
         let obj_type = parts
             .next()
             .ok_or_else(|| "Missing object type".to_string())?;
+
+        // Get the object size
         let _size = parts
             .next()
             .ok_or_else(|| "Missing object size".to_string())?;
