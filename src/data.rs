@@ -5,6 +5,19 @@ use std::path::Path;
 
 const GIT_DIR: &str = ".bgit";
 
+#[derive(Debug)]
+enum ObjectType {
+    Blob,
+}
+
+impl ObjectType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ObjectType::Blob => "blob",
+        }
+    }
+}
+
 pub struct Repository {
     worktree: String,
     gitdir: String,
@@ -63,11 +76,19 @@ impl Repository {
     }
 
     pub fn hash_object(&self, data: &[u8]) -> Result<String, String> {
+        // Create header: "blob {size}\0"
+        let header = format!("{} {}\0", ObjectType::Blob.as_str(), data.len());
+
+        // Combine header and data
+        let mut object_data = Vec::new();
+        object_data.extend_from_slice(header.as_bytes());
+        object_data.extend_from_slice(data);
+
         // Create a new SHA-1 hasher
         let mut hasher = Sha1::new();
 
         // Update the hasher with the data
-        hasher.update(data);
+        hasher.update(&object_data);
 
         // Finalize the hasher and get the hash
         let hash = hasher.finalize();
@@ -76,22 +97,17 @@ impl Repository {
         let hash_str = hex::encode(hash);
 
         // Create object path
-
-        // Split the hash into two parts
         let (dir, file) = hash_str.split_at(2);
-
-        // Create object directory
         let object_dir = format!("{}/objects/{}", self.gitdir, dir);
-
-        // Create object path
         let object_path = format!("{}/{}", object_dir, file);
 
         // Create directory if it doesn't exist
         fs::create_dir_all(&object_dir)
             .map_err(|e| format!("Failed to create object directory: {}", e))?;
 
-        // Write the data to the object file
-        fs::write(&object_path, data).map_err(|e| format!("Failed to write object file: {}", e))?;
+        // Write the object data to the file
+        fs::write(&object_path, &object_data)
+            .map_err(|e| format!("Failed to write object file: {}", e))?;
 
         Ok(hash_str)
     }
@@ -107,6 +123,32 @@ impl Repository {
         let object_path = format!("{}/objects/{}/{}", self.gitdir, dir, file);
 
         // Read the object file
-        fs::read(&object_path).map_err(|e| format!("Failed to read object: {}", e))
+        let object_data =
+            fs::read(&object_path).map_err(|e| format!("Failed to read object: {}", e))?;
+
+        // Parse the header
+        let header_end = object_data
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| "Invalid object format: missing null byte".to_string())?;
+
+        let header = String::from_utf8(object_data[..header_end].to_vec())
+            .map_err(|_| "Invalid header encoding".to_string())?;
+
+        let mut parts = header.split_whitespace();
+        let obj_type = parts
+            .next()
+            .ok_or_else(|| "Missing object type".to_string())?;
+        let _size = parts
+            .next()
+            .ok_or_else(|| "Missing object size".to_string())?;
+
+        // For now, we only support blobs
+        if obj_type != "blob" {
+            return Err(format!("Unsupported object type: {}", obj_type));
+        }
+
+        // Return the actual content (everything after the header)
+        Ok(object_data[header_end + 1..].to_vec())
     }
 }
