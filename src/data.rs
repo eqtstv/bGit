@@ -63,14 +63,27 @@ impl Repository {
     }
 
     pub fn hash_object(&self, data: &[u8]) -> Result<String, String> {
+        // Create a new SHA-1 hasher
         let mut hasher = Sha1::new();
+
+        // Update the hasher with the data
         hasher.update(data);
+
+        // Finalize the hasher and get the hash
         let hash = hasher.finalize();
+
+        // Encode the hash as a hex string
         let hash_str = hex::encode(hash);
 
         // Create object path
+
+        // Split the hash into two parts
         let (dir, file) = hash_str.split_at(2);
+
+        // Create object directory
         let object_dir = format!("{}/objects/{}", self.gitdir, dir);
+
+        // Create object path
         let object_path = format!("{}/{}", object_dir, file);
 
         // Create directory if it doesn't exist
