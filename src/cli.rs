@@ -2,6 +2,7 @@ use std::env;
 
 pub enum Command {
     Init,
+    HashObject(String),
     Unknown(String),
 }
 
@@ -13,6 +14,12 @@ impl Command {
 
         match args[0].as_str() {
             "init" => Command::Init,
+            "hash-object" => {
+                if args.len() < 2 {
+                    return Command::Unknown("No file path provided for hash-object".to_string());
+                }
+                Command::HashObject(args[1].clone())
+            }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
     }
