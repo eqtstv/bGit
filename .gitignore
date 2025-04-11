@@ -1,5 +1,7 @@
 /target
 .git/
 .bgit/
+.DS_Store
+.vscode/
 
 settings.json
