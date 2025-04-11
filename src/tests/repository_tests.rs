@@ -909,3 +909,55 @@ fn test_checkout_directory_structure() {
         "New content"
     );
 }
+
+#[test]
+fn test_ignore_directories() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create test directory structure
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Create a directory that should be ignored
+    let ignored_dir = test_dir.join("node_modules");
+    fs::create_dir(&ignored_dir).unwrap();
+    fs::write(ignored_dir.join("package.json"), "{}").unwrap();
+
+    // Create a .git directory that should be ignored
+    let git_dir = test_dir.join(".git");
+    fs::create_dir(&git_dir).unwrap();
+    fs::write(git_dir.join("config"), "{}").unwrap();
+
+    // Create .bgitignore file with directory pattern
+    fs::write(
+        Path::new(&repo.gitdir).join(".bgitignore"),
+        "node_modules/\n",
+    )
+    .unwrap();
+
+    // Create some normal files and directories
+    fs::write(test_dir.join("file1.txt"), "Content 1").unwrap();
+    let normal_dir = test_dir.join("src");
+    fs::create_dir(&normal_dir).unwrap();
+    fs::write(normal_dir.join("main.rs"), "fn main() {}").unwrap();
+
+    // Empty the directory
+    assert!(repo.empty_current_directory(&test_dir).is_ok());
+
+    // Verify ignored directory still exists with its contents
+    assert!(ignored_dir.exists());
+    assert!(ignored_dir.join("package.json").exists());
+
+    // Verify .git directory still exists with its contents
+    assert!(git_dir.exists());
+    assert!(git_dir.join("config").exists());
+
+    // Verify normal files and directories are removed
+    assert!(!test_dir.join("file1.txt").exists());
+    assert!(!normal_dir.exists());
+    assert!(!normal_dir.join("main.rs").exists());
+}
