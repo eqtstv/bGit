@@ -332,6 +332,12 @@ impl Repository {
             // Create the full path
             let entry_path = path.join(name);
 
+            // Skip ignored files
+            if self.is_ignored(&entry_path) {
+                pos = hash_end;
+                continue;
+            }
+
             if mode == "100644" {
                 // It's a file - create a blob
                 let content = self.get_object(&hash)?;

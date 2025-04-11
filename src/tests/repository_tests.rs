@@ -246,7 +246,7 @@ fn test_read_tree_success() {
     let tree_hash = repo.create_tree(&test_dir).unwrap();
 
     // Create target directory for reading tree
-    let target_dir = temp_dir.path().join("target_dir");
+    let target_dir = temp_dir.path().join("new_dir");
     fs::create_dir(&target_dir).unwrap();
 
     // Read tree into target directory
