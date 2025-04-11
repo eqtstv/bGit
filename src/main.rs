@@ -1,8 +1,8 @@
 mod cli;
-mod data;
+mod repository;
 
 use cli::Command;
-use data::{ObjectType, Repository};
+use repository::{ObjectType, Repository};
 use std::fs;
 use std::path::Path;
 

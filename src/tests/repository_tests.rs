@@ -1,4 +1,4 @@
-use crate::data::{GIT_DIR, ObjectType, Repository};
+use crate::repository::{GIT_DIR, ObjectType, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
