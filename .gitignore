@@ -1,6 +1,5 @@
 /target
 .git/
 .bgit/
-.bgitignore
 
 settings.json
