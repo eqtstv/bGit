@@ -1,4 +1,3 @@
-use regex;
 use sha1::{Digest, Sha1};
 use std::fs;
 use std::path::Path;
@@ -249,7 +248,7 @@ impl Repository {
 
             // Handle directory patterns (ending with /)
             if pattern.ends_with('/') {
-                let dir_pattern = &pattern[..pattern.len() - 1];
+                let dir_pattern = pattern.strip_suffix('/').unwrap_or(pattern);
                 if path_str.contains(dir_pattern) && path.is_dir() {
                     return true;
                 }
@@ -421,7 +420,7 @@ impl Repository {
         let mut commit_data = Vec::new();
 
         // Create tree from worktree
-        let tree_oid = self.create_tree(&Path::new(&self.worktree))?;
+        let tree_oid = self.create_tree(Path::new(&self.worktree))?;
 
         // Add tree hash
         commit_data.extend_from_slice(b"tree ");
