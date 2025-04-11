@@ -9,6 +9,7 @@ pub enum Command {
     GetTree(String),
     Commit(String),
     Log,
+    Checkout(String),
     Unknown(String),
 }
 
@@ -57,6 +58,12 @@ impl Command {
                 Command::Commit(args[1].clone())
             }
             "log" => Command::Log,
+            "checkout" => {
+                if args.len() < 2 {
+                    return Command::Unknown("No commit hash provided for checkout".to_string());
+                }
+                Command::Checkout(args[1].clone())
+            }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
     }

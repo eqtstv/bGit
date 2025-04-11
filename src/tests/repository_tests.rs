@@ -746,3 +746,156 @@ fn test_log_empty_repository() {
     let result = repo.log();
     assert!(result.is_err());
 }
+
+#[test]
+fn test_checkout_success() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let first_message = "First commit";
+    let first_hash = repo.create_commit(first_message).unwrap();
+
+    // Create some files for second commit
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+    fs::write(test_dir.join("file1.txt"), "Content 1").unwrap();
+    fs::write(test_dir.join("file2.txt"), "Content 2").unwrap();
+
+    // Create second commit
+    let second_message = "Second commit";
+    let second_hash = repo.create_commit(second_message).unwrap();
+
+    // Checkout first commit
+    assert!(repo.checkout(&first_hash).is_ok());
+
+    // Verify HEAD points to first commit
+    let head_hash = repo.get_head().unwrap();
+    assert_eq!(head_hash, first_hash);
+
+    // Verify worktree is empty (first commit had no files)
+    assert!(!test_dir.join("file1.txt").exists());
+    assert!(!test_dir.join("file2.txt").exists());
+
+    // Checkout second commit
+    assert!(repo.checkout(&second_hash).is_ok());
+
+    // Verify HEAD points to second commit
+    let head_hash = repo.get_head().unwrap();
+    assert_eq!(head_hash, second_hash);
+
+    // Verify worktree has the files from second commit
+    assert!(test_dir.join("file1.txt").exists());
+    assert!(test_dir.join("file2.txt").exists());
+    assert_eq!(
+        fs::read_to_string(test_dir.join("file1.txt")).unwrap(),
+        "Content 1"
+    );
+    assert_eq!(
+        fs::read_to_string(test_dir.join("file2.txt")).unwrap(),
+        "Content 2"
+    );
+}
+
+#[test]
+fn test_checkout_invalid_hash() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to checkout with invalid hash format
+    let result = repo.checkout("not40chars");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Invalid hash format"));
+
+    // Try to checkout non-existent commit with valid hash format
+    let result = repo.checkout("0000000000000000000000000000000000000000");
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    println!("Actual error message: {}", error);
+    assert!(error.contains("Commit with hash: 0000000000000000000000000000000000000000 not found"));
+}
+
+#[test]
+fn test_checkout_with_existing_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit with some files
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+    fs::write(test_dir.join("file1.txt"), "Initial content").unwrap();
+    let first_hash = repo.create_commit("First commit").unwrap();
+
+    // Create some additional files not in the commit
+    fs::write(test_dir.join("file2.txt"), "Uncommitted content").unwrap();
+    fs::write(test_dir.join("file3.txt"), "Another uncommitted file").unwrap();
+
+    // Checkout the same commit (should work and preserve uncommitted files)
+    assert!(repo.checkout(&first_hash).is_ok());
+
+    // Verify committed file exists with correct content
+    assert!(test_dir.join("file1.txt").exists());
+    assert_eq!(
+        fs::read_to_string(test_dir.join("file1.txt")).unwrap(),
+        "Initial content"
+    );
+
+    // Verify uncommitted files are not present
+    assert!(!test_dir.join("file2.txt").exists());
+    assert!(!test_dir.join("file3.txt").exists());
+}
+
+#[test]
+fn test_checkout_directory_structure() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit with nested directory structure
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+    let subdir = test_dir.join("subdir");
+    fs::create_dir(&subdir).unwrap();
+    fs::write(subdir.join("nested.txt"), "Nested content").unwrap();
+    let first_hash = repo.create_commit("First commit").unwrap();
+
+    // Create second commit with different structure
+    fs::remove_dir_all(&test_dir).unwrap();
+    fs::create_dir(&test_dir).unwrap();
+    fs::write(test_dir.join("file.txt"), "New content").unwrap();
+    let second_hash = repo.create_commit("Second commit").unwrap();
+
+    // Checkout first commit
+    assert!(repo.checkout(&first_hash).is_ok());
+
+    // Verify directory structure from first commit
+    assert!(test_dir.join("subdir").exists());
+    assert!(test_dir.join("subdir/nested.txt").exists());
+    assert_eq!(
+        fs::read_to_string(test_dir.join("subdir/nested.txt")).unwrap(),
+        "Nested content"
+    );
+    assert!(!test_dir.join("file.txt").exists());
+
+    // Checkout second commit
+    assert!(repo.checkout(&second_hash).is_ok());
+
+    // Verify directory structure from second commit
+    assert!(!test_dir.join("subdir").exists());
+    assert!(test_dir.join("file.txt").exists());
+    assert_eq!(
+        fs::read_to_string(test_dir.join("file.txt")).unwrap(),
+        "New content"
+    );
+}

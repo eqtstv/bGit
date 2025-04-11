@@ -546,4 +546,24 @@ impl Repository {
 
         Ok(())
     }
+
+    pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
+        // Check if the commit hash is valid
+        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("Invalid hash format: {}", commit_hash));
+        }
+
+        // Get the commit from the hash
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_| format!("Commit with hash: {} not found", commit_hash))?;
+
+        // Read the commit tree
+        self.read_tree(&commit._tree, Path::new(&self.worktree))?;
+
+        // Set HEAD to point to the new commit
+        self.set_head(commit_hash)?;
+
+        Ok(())
+    }
 }
