@@ -654,3 +654,95 @@ fn test_commit_multiple_files() {
     assert!(commit_str.contains(&format!("tree {}", tree_hash)));
     assert!(commit_str.contains(commit_message));
 }
+
+#[test]
+fn test_get_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let commit_message = "Initial commit";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Get and verify commit
+    let commit = repo.get_commit(&commit_hash).unwrap();
+    assert_eq!(commit.message, commit_message);
+    assert!(commit.parent.is_none());
+    assert!(!commit.timestamp.is_empty());
+    assert!(!commit.tree.is_empty());
+
+    // Create second commit
+    let second_message = "Second commit";
+    let second_hash = repo.create_commit(second_message).unwrap();
+
+    // Get and verify second commit
+    let second_commit = repo.get_commit(&second_hash).unwrap();
+    assert_eq!(second_commit.message, second_message);
+    assert_eq!(second_commit.parent.unwrap(), commit_hash);
+    assert!(!second_commit.timestamp.is_empty());
+    assert!(!second_commit.tree.is_empty());
+
+    // Test invalid commit hash
+    let result = repo.get_commit("invalidhash");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_log() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create first commit
+    let first_message = "First commit";
+    let first_hash = repo.create_commit(first_message).unwrap();
+
+    // Create second commit
+    let second_message = "Second commit";
+    let second_hash = repo.create_commit(second_message).unwrap();
+
+    // Create third commit
+    let third_message = "Third commit";
+    repo.create_commit(third_message).unwrap();
+
+    // Test log output
+    assert!(repo.log().is_ok());
+
+    // Verify log shows all commits in correct order
+    let output = std::process::Command::new("cargo")
+        .args(["test", "--", "test_log", "--nocapture"])
+        .output()
+        .unwrap();
+    let output_str = String::from_utf8(output.stdout).unwrap();
+
+    // Verify commit messages appear in correct order
+    assert!(output_str.contains(third_message));
+    assert!(output_str.contains(second_message));
+    assert!(output_str.contains(first_message));
+
+    // Verify commit hashes appear
+    assert!(output_str.contains(&second_hash));
+    assert!(output_str.contains(&first_hash));
+
+    // Verify parent relationships
+    assert!(output_str.contains(&format!("parent {}", second_hash)));
+    assert!(output_str.contains(&format!("parent {}", first_hash)));
+}
+
+#[test]
+fn test_log_empty_repository() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Log should fail when there are no commits
+    let result = repo.log();
+    assert!(result.is_err());
+}

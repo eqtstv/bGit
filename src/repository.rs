@@ -12,6 +12,14 @@ pub enum ObjectType {
     Commit,
 }
 
+#[derive(Debug)]
+pub struct Commit {
+    pub tree: String,
+    pub parent: Option<String>,
+    pub timestamp: String,
+    pub message: String,
+}
+
 impl ObjectType {
     fn as_str(&self) -> &'static str {
         match self {
@@ -463,5 +471,80 @@ impl Repository {
         fs::read_to_string(&head_path)
             .map_err(|e| format!("Failed to read HEAD file: {}", e))
             .map(|content| content.trim().to_string())
+    }
+
+    pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
+        // Get the raw commit data
+        let commit_data = self.get_object(hash)?;
+        let commit_str =
+            String::from_utf8(commit_data).map_err(|_| "Invalid commit encoding".to_string())?;
+
+        // Parse the commit data
+        let mut tree = None;
+        let mut parent = None;
+        let mut timestamp = None;
+        let mut message = String::new();
+        let mut in_message = false;
+
+        for line in commit_str.lines() {
+            if in_message {
+                message.push_str(line);
+                message.push('\n');
+                continue;
+            }
+
+            if line.is_empty() {
+                in_message = true;
+                continue;
+            }
+
+            if let Some(rest) = line.strip_prefix("tree ") {
+                tree = Some(rest.to_string());
+            } else if let Some(rest) = line.strip_prefix("parent ") {
+                parent = Some(rest.to_string());
+            } else if let Some(rest) = line.strip_prefix("timestamp ") {
+                timestamp = Some(rest.to_string());
+            }
+        }
+
+        // Validate required fields
+        let tree = tree.ok_or_else(|| "Missing tree hash in commit".to_string())?;
+        let timestamp = timestamp.ok_or_else(|| "Missing timestamp in commit".to_string())?;
+
+        // Remove trailing newline from message
+        message = message.trim_end().to_string();
+
+        Ok(Commit {
+            tree,
+            parent,
+            timestamp,
+            message,
+        })
+    }
+
+    pub fn log(&self) -> Result<(), String> {
+        // Get the current HEAD commit
+        let head_hash = self.get_head()?;
+        let mut current_hash = Some(head_hash);
+
+        while let Some(hash) = current_hash {
+            let commit = self.get_commit(&hash)?;
+
+            // Print commit information
+            println!();
+            println!("\x1b[33mcommit {}\x1b[0m", hash);
+            if let Some(parent) = &commit.parent {
+                println!("parent {}", parent);
+            }
+            println!("Date:   {}", commit.timestamp);
+            println!();
+            println!("    {}", commit.message);
+            println!();
+
+            // Move to parent commit
+            current_hash = commit.parent;
+        }
+
+        Ok(())
     }
 }

@@ -8,6 +8,7 @@ pub enum Command {
     ReadTree(String),
     GetTree(String),
     Commit(String),
+    Log,
     Unknown(String),
 }
 
@@ -55,6 +56,7 @@ impl Command {
                 }
                 Command::Commit(args[1].clone())
             }
+            "log" => Command::Log,
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
     }
