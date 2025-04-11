@@ -229,6 +229,8 @@ impl Repository {
             ".gitignore",
             // Other
             "settings.json",
+            ".DS_Store",
+            ".vscode",
         ];
 
         for ignore_path in paths_to_ignore {
