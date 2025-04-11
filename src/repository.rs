@@ -239,7 +239,8 @@ impl Repository {
             }
         }
 
-        let gitignore_path = Path::new(&self.gitdir).join(".bgitignore");
+        // Look for .bgitignore in the root of the repository (worktree) instead of in .bgit
+        let gitignore_path = Path::new(&self.worktree).join(".bgitignore");
         if !gitignore_path.exists() {
             return false;
         }
