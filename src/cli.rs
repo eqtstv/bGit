@@ -4,6 +4,7 @@ pub enum Command {
     Init,
     HashObject(String),
     CatFile(String),
+    WriteTree,
     Unknown(String),
 }
 
@@ -26,6 +27,12 @@ impl Command {
                     return Command::Unknown("No hash provided for cat-file".to_string());
                 }
                 Command::CatFile(args[1].clone())
+            }
+            "write-tree" => {
+                if args.len() > 1 {
+                    return Command::Unknown("write-tree does not take any arguments".to_string());
+                }
+                Command::WriteTree
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

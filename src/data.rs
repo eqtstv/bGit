@@ -7,12 +7,14 @@ pub const GIT_DIR: &str = ".bgit";
 #[derive(Debug)]
 enum ObjectType {
     Blob,
+    Tree,
 }
 
 impl ObjectType {
     fn as_str(&self) -> &'static str {
         match self {
             ObjectType::Blob => "blob",
+            ObjectType::Tree => "tree",
         }
     }
 }

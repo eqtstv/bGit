@@ -1,6 +1,8 @@
+mod base;
 mod cli;
 mod data;
 
+use base::write_tree;
 use cli::Command;
 use data::Repository;
 use std::fs;
@@ -45,6 +47,13 @@ fn main() {
                 }
             }
         }
+        Command::WriteTree => match write_tree(&repo) {
+            Ok(hash) => println!("{}", hash),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);
