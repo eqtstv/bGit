@@ -736,12 +736,12 @@ fn test_log() {
     assert!(output_str.contains(first_message));
 
     // Verify commit hashes appear
-    assert!(output_str.contains(&second_hash));
     assert!(output_str.contains(&first_hash));
+    assert!(output_str.contains(&second_hash));
 
     // Verify parent relationships
-    assert!(output_str.contains(&format!("parent {}", second_hash)));
     assert!(output_str.contains(&format!("parent {}", first_hash)));
+    assert!(output_str.contains(&format!("parent {}", second_hash)));
 }
 
 #[test]
