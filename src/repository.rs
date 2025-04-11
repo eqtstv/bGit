@@ -418,9 +418,18 @@ impl Repository {
         // Add tree hash
         commit_data.extend_from_slice(b"tree ");
         commit_data.extend_from_slice(tree_oid.as_bytes());
-
-        // New line
         commit_data.extend_from_slice(b"\n");
+
+        // Add parent commit if HEAD exists and contains a valid commit hash
+        if let Ok(parent_hash) = self.get_head() {
+            // Only add parent if it's a valid commit hash (40 hex characters)
+            if parent_hash.len() == 40 && parent_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                commit_data.extend_from_slice(b"parent ");
+                commit_data.extend_from_slice(parent_hash.as_bytes());
+                commit_data.extend_from_slice(b"\n");
+            }
+        }
+
         // Add datetime
         let datetime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         commit_data.extend_from_slice(b"timestamp ");
@@ -435,6 +444,24 @@ impl Repository {
         commit_data.extend_from_slice(b"\n");
 
         let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
+
+        // Set HEAD to point to the new commit
+        self.set_head(&hash)?;
+
         Ok(hash)
+    }
+
+    pub fn set_head(&self, commit_hash: &str) -> Result<(), String> {
+        let head_path = format!("{}/HEAD", self.gitdir);
+        fs::write(&head_path, commit_hash)
+            .map_err(|e| format!("Failed to update HEAD file: {}", e))?;
+        Ok(())
+    }
+
+    pub fn get_head(&self) -> Result<String, String> {
+        let head_path = format!("{}/HEAD", self.gitdir);
+        fs::read_to_string(&head_path)
+            .map_err(|e| format!("Failed to read HEAD file: {}", e))
+            .map(|content| content.trim().to_string())
     }
 }

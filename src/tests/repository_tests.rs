@@ -514,8 +514,75 @@ fn test_commit_success() {
     // Verify commit content
     let commit_data = repo.get_object(&commit_hash).unwrap();
     let commit_str = String::from_utf8(commit_data).unwrap();
+    println!("Commit string: {}", commit_str);
     assert!(commit_str.contains(&format!("tree {}", tree_hash)));
     assert!(commit_str.contains(commit_message));
+    assert!(!commit_str.contains("parent")); // First commit shouldn't have parent
+}
+
+#[test]
+fn test_commit_with_parent() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let first_commit_message = "First commit";
+    let first_commit_hash = repo.create_commit(first_commit_message).unwrap();
+
+    // Create second commit
+    let second_commit_message = "Second commit";
+    let second_commit_hash = repo.create_commit(second_commit_message).unwrap();
+
+    // Verify second commit has parent
+    let commit_data = repo.get_object(&second_commit_hash).unwrap();
+    let commit_str = String::from_utf8(commit_data).unwrap();
+    assert!(commit_str.contains(&format!("parent {}", first_commit_hash)));
+}
+
+#[test]
+fn test_set_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create a commit
+    let commit_message = "Test commit";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Set HEAD manually
+    assert!(repo.set_head(&commit_hash).is_ok());
+
+    // Verify HEAD content
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    let head_content = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(head_content.trim(), commit_hash);
+}
+
+#[test]
+fn test_get_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create a commit
+    let commit_message = "Test commit";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Get HEAD
+    let head_hash = repo.get_head().unwrap();
+    assert_eq!(head_hash, commit_hash);
+
+    // Test getting HEAD when it doesn't exist
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    fs::remove_file(&head_path).unwrap();
+    assert!(repo.get_head().is_err());
 }
 
 #[test]
