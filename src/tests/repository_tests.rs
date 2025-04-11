@@ -347,6 +347,9 @@ fn test_empty_current_directory_with_bgitignore() {
     fs::create_dir(&test_dir).unwrap();
     fs::write(test_dir.join("ignored.txt"), "Ignored content").unwrap();
     fs::write(test_dir.join("normal.txt"), "Normal content").unwrap();
+    fs::write(test_dir.join(".bgitignore"), "ignored.txt\n").unwrap();
+    fs::write(test_dir.join(".gitignore"), "ignored.txt\n").unwrap();
+    fs::write(test_dir.join("settings.json"), "{}").unwrap();
 
     // Empty the directory
     assert!(repo.empty_current_directory(&test_dir).is_ok());
@@ -356,6 +359,11 @@ fn test_empty_current_directory_with_bgitignore() {
 
     // Verify normal files are deleted
     assert!(!test_dir.join("normal.txt").exists());
+
+    // Verify hardcoded files are not deleted
+    assert!(test_dir.join(".bgitignore").exists());
+    assert!(test_dir.join(".gitignore").exists());
+    assert!(test_dir.join("settings.json").exists());
 }
 
 #[test]
