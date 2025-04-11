@@ -1,0 +1,7 @@
+target
+.git
+.bgit
+.bgitignore
+.DS_Store
+
+settings.json

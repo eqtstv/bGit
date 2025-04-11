@@ -1,8 +1,8 @@
 pub mod cli;
-pub mod data;
+pub mod repository;
 
 #[cfg(test)]
 mod tests {
     // This will include all tests from the tests directory
-    include!("tests/data_tests.rs");
+    include!("tests/repository_tests.rs");
 }
