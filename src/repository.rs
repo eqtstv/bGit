@@ -227,8 +227,6 @@ impl Repository {
             // Git directories
             ".git",
             ".gitignore",
-            // Rust directories
-            "target",
             // Other
             "settings.json",
             ".DS_Store",
