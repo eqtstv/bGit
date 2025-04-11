@@ -1,4 +1,5 @@
 use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -293,6 +294,9 @@ impl Repository {
     }
 
     pub fn read_tree(&self, tree_oid: &str, path: &Path) -> Result<(), String> {
+        // Store original permissions
+        let mut original_permissions: HashMap<String, std::fs::Permissions> = HashMap::new();
+
         // Empty the current directory first
         self.empty_current_directory(path)?;
 
@@ -328,6 +332,7 @@ impl Repository {
 
             // Create the full path
             let entry_path = path.join(name);
+            let entry_path_str = entry_path.to_string_lossy().to_string();
 
             if mode == "100644" {
                 // It's a file - create a blob
@@ -335,7 +340,12 @@ impl Repository {
                 fs::write(&entry_path, content)
                     .map_err(|e| format!("Failed to write file {}: {}", name, e))?;
 
-                // Set full permissions (rwxrwxrwx)
+                // Store original permissions
+                if let Ok(metadata) = fs::metadata(&entry_path) {
+                    original_permissions.insert(entry_path_str.clone(), metadata.permissions());
+                }
+
+                // Set full permissions temporarily
                 let mut perms = fs::metadata(&entry_path)
                     .map_err(|e| format!("Failed to get file metadata: {}", e))?
                     .permissions();
@@ -347,7 +357,12 @@ impl Repository {
                 fs::create_dir_all(&entry_path)
                     .map_err(|e| format!("Failed to create directory {}: {}", name, e))?;
 
-                // Set full permissions (rwxrwxrwx)
+                // Store original permissions
+                if let Ok(metadata) = fs::metadata(&entry_path) {
+                    original_permissions.insert(entry_path_str.clone(), metadata.permissions());
+                }
+
+                // Set full permissions temporarily
                 let mut perms = fs::metadata(&entry_path)
                     .map_err(|e| format!("Failed to get directory metadata: {}", e))?
                     .permissions();
@@ -362,6 +377,16 @@ impl Repository {
 
             // Move to the next entry
             pos = hash_end;
+        }
+
+        // Restore original permissions
+        for (path_str, permissions) in original_permissions {
+            if let Err(e) = fs::set_permissions(&path_str, permissions) {
+                eprintln!(
+                    "Warning: Failed to restore permissions for {}: {}",
+                    path_str, e
+                );
+            }
         }
 
         Ok(())
