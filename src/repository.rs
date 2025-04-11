@@ -1,5 +1,6 @@
 use sha1::{Digest, Sha1};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 pub const GIT_DIR: &str = ".bgit";
@@ -333,10 +334,27 @@ impl Repository {
                 let content = self.get_object(&hash)?;
                 fs::write(&entry_path, content)
                     .map_err(|e| format!("Failed to write file {}: {}", name, e))?;
+
+                // Set full permissions (rwxrwxrwx)
+                let mut perms = fs::metadata(&entry_path)
+                    .map_err(|e| format!("Failed to get file metadata: {}", e))?
+                    .permissions();
+                perms.set_mode(0o777);
+                fs::set_permissions(&entry_path, perms)
+                    .map_err(|e| format!("Failed to set file permissions: {}", e))?;
             } else if mode == "40000" {
                 // It's a directory - create it and recurse
                 fs::create_dir_all(&entry_path)
                     .map_err(|e| format!("Failed to create directory {}: {}", name, e))?;
+
+                // Set full permissions (rwxrwxrwx)
+                let mut perms = fs::metadata(&entry_path)
+                    .map_err(|e| format!("Failed to get directory metadata: {}", e))?
+                    .permissions();
+                perms.set_mode(0o777);
+                fs::set_permissions(&entry_path, perms)
+                    .map_err(|e| format!("Failed to set directory permissions: {}", e))?;
+
                 self.read_tree(&hash, &entry_path)?;
             } else {
                 return Err(format!("Unsupported mode: {}", mode));
