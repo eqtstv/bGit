@@ -331,7 +331,7 @@ fn test_empty_current_directory() {
 }
 
 #[test]
-fn test_empty_current_directory_with_gitignore() {
+fn test_empty_current_directory_with_bgitignore() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path().to_str().unwrap();
 
@@ -351,8 +351,10 @@ fn test_empty_current_directory_with_gitignore() {
     // Empty the directory
     assert!(repo.empty_current_directory(&test_dir).is_ok());
 
-    // Verify everything is gone
-    assert!(!test_dir.join("ignored.txt").exists());
+    // Verify ignored files is not deleted
+    assert!(test_dir.join("ignored.txt").exists());
+
+    // Verify normal files are deleted
     assert!(!test_dir.join("normal.txt").exists());
 }
 

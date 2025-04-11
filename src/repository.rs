@@ -220,6 +220,23 @@ impl Repository {
     }
 
     pub fn is_ignored(&self, path: &Path) -> bool {
+        let paths_to_ignore = [
+            // bGit directories
+            ".bgit",
+            ".bgitignore",
+            // Git directories
+            ".git",
+            ".gitignore",
+            // Other
+            "settings.json",
+        ];
+
+        for ignore_path in paths_to_ignore {
+            if path.to_string_lossy().contains(ignore_path) {
+                return true;
+            }
+        }
+
         let gitignore_path = Path::new(&self.gitdir).join(".bgitignore");
         if !gitignore_path.exists() {
             return false;
@@ -342,8 +359,8 @@ impl Repository {
                 .and_then(|n| n.to_str())
                 .ok_or_else(|| "Invalid file name".to_string())?;
 
-            // Skip .bgit directory
-            if name == GIT_DIR {
+            // Skip ignored files
+            if self.is_ignored(&entry_path) {
                 continue;
             }
 
