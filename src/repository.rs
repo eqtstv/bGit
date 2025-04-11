@@ -552,6 +552,7 @@ impl Repository {
             if let Some(parent) = &commit.parent {
                 println!("parent {}", parent);
             }
+            println!("tree {}", commit._tree);
             println!("Date:   {}", commit.timestamp);
             println!();
             println!("    {}", commit.message);
