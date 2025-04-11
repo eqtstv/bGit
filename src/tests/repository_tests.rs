@@ -286,7 +286,7 @@ fn test_read_tree_with_existing_files() {
     let tree_hash = repo.create_tree(&test_dir).unwrap();
 
     // Create target directory with existing files
-    let target_dir = temp_dir.path().join("target_dir");
+    let target_dir = temp_dir.path().join("new_dir");
     fs::create_dir(&target_dir).unwrap();
     fs::write(target_dir.join("old.txt"), "Old content").unwrap();
     fs::write(target_dir.join("test.txt"), "Old test content").unwrap();
