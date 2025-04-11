@@ -214,7 +214,7 @@ fn test_is_ignored() {
     fs::write(&test_rs, "rust code").unwrap();
 
     // Create .bgitignore file
-    let gitignore_path = Path::new(&repo.gitdir).join(".bgitignore");
+    let gitignore_path = Path::new(&repo.worktree).join(".bgitignore");
     fs::write(&gitignore_path, "*.txt\nignored_dir/\n").unwrap();
 
     // Test ignored files
@@ -339,7 +339,7 @@ fn test_empty_current_directory_with_bgitignore() {
     repo.init().unwrap();
 
     // Create .bgitignore file
-    let gitignore_path = Path::new(&repo.gitdir).join(".bgitignore");
+    let gitignore_path = Path::new(&repo.worktree).join(".bgitignore");
     fs::write(&gitignore_path, "ignored.txt\n").unwrap();
 
     // Create test directory with ignored and non-ignored files
@@ -934,7 +934,7 @@ fn test_ignore_directories() {
 
     // Create .bgitignore file with directory pattern
     fs::write(
-        Path::new(&repo.gitdir).join(".bgitignore"),
+        Path::new(&repo.worktree).join(".bgitignore"),
         "node_modules/\n",
     )
     .unwrap();
@@ -973,7 +973,7 @@ fn test_is_ignored_with_directory_pattern() {
     repo.init().unwrap();
 
     // Create a .bgitignore file with a directory pattern
-    let gitignore_path = Path::new(&repo.gitdir).join(".bgitignore");
+    let gitignore_path = Path::new(&repo.worktree).join(".bgitignore");
     fs::write(&gitignore_path, "target\n").unwrap();
 
     // Create a target directory
