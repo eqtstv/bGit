@@ -14,7 +14,7 @@ pub enum ObjectType {
 
 #[derive(Debug)]
 pub struct Commit {
-    pub tree: String,
+    pub _tree: String,
     pub parent: Option<String>,
     pub timestamp: String,
     pub message: String,
@@ -515,7 +515,7 @@ impl Repository {
         message = message.trim_end().to_string();
 
         Ok(Commit {
-            tree,
+            _tree: tree,
             parent,
             timestamp,
             message,

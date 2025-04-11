@@ -672,7 +672,7 @@ fn test_get_commit() {
     assert_eq!(commit.message, commit_message);
     assert!(commit.parent.is_none());
     assert!(!commit.timestamp.is_empty());
-    assert!(!commit.tree.is_empty());
+    assert!(!commit._tree.is_empty());
 
     // Create second commit
     let second_message = "Second commit";
@@ -683,7 +683,7 @@ fn test_get_commit() {
     assert_eq!(second_commit.message, second_message);
     assert_eq!(second_commit.parent.unwrap(), commit_hash);
     assert!(!second_commit.timestamp.is_empty());
-    assert!(!second_commit.tree.is_empty());
+    assert!(!second_commit._tree.is_empty());
 
     // Test invalid commit hash
     let result = repo.get_commit("invalidhash");
