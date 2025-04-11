@@ -285,8 +285,8 @@ impl Repository {
                 continue;
             }
 
-            // For exact matches or directory names without wildcards
-            if pattern == path_str || (path.is_dir() && path_str.contains(pattern)) {
+            // Simple contains check for non-wildcard patterns
+            if path_str.contains(pattern) {
                 return true;
             }
         }

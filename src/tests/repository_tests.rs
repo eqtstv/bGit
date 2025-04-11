@@ -961,3 +961,43 @@ fn test_ignore_directories() {
     assert!(!normal_dir.exists());
     assert!(!normal_dir.join("main.rs").exists());
 }
+
+#[test]
+fn test_is_ignored_with_directory_pattern() {
+    // Create a temporary directory for the test
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path();
+
+    // Initialize a repository
+    let repo = Repository::new(repo_path.to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create a .bgitignore file with a directory pattern
+    let gitignore_path = Path::new(&repo.gitdir).join(".bgitignore");
+    fs::write(&gitignore_path, "target\n").unwrap();
+
+    // Create a target directory
+    let target_dir = repo_path.join("target");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Create some files in the target directory
+    fs::write(target_dir.join("file1.txt"), "test").unwrap();
+    fs::write(target_dir.join("file2.txt"), "test").unwrap();
+
+    // Test that the target directory is ignored
+    assert!(repo.is_ignored(&target_dir));
+
+    // Test that files inside the target directory are also ignored
+    assert!(repo.is_ignored(&target_dir.join("file1.txt")));
+    assert!(repo.is_ignored(&target_dir.join("file2.txt")));
+
+    // Test that other directories are not ignored
+    let other_dir = repo_path.join("src");
+    fs::create_dir_all(&other_dir).unwrap();
+    assert!(!repo.is_ignored(&other_dir));
+
+    // Test that files in other directories are not ignored
+    let other_file = other_dir.join("main.rs");
+    fs::write(&other_file, "test").unwrap();
+    assert!(!repo.is_ignored(&other_file));
+}
