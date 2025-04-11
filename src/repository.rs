@@ -176,8 +176,8 @@ impl Repository {
                 .and_then(|n| n.to_str())
                 .ok_or_else(|| "Invalid file name".to_string())?;
 
-            // Ignore .bgit directory and ignored files
-            if name == GIT_DIR || self.is_ignored(&entry_path) {
+            // Ignore ignored files and directories
+            if self.is_ignored(&entry_path) {
                 continue;
             }
 
