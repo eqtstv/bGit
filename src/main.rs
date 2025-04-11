@@ -74,6 +74,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Commit(message) => match repo.create_commit(&message) {
+            Ok(hash) => println!("{}", hash),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

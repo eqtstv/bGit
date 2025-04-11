@@ -9,6 +9,7 @@ pub const GIT_DIR: &str = ".bgit";
 pub enum ObjectType {
     Blob,
     Tree,
+    Commit,
 }
 
 impl ObjectType {
@@ -16,6 +17,7 @@ impl ObjectType {
         match self {
             ObjectType::Blob => "blob",
             ObjectType::Tree => "tree",
+            ObjectType::Commit => "commit",
         }
     }
 }
@@ -401,5 +403,38 @@ impl Repository {
         }
 
         Ok(entries)
+    }
+
+    pub fn create_commit(&self, message: &str) -> Result<String, String> {
+        if message.trim().is_empty() {
+            return Err("Commit message cannot be empty".to_string());
+        }
+
+        let mut commit_data = Vec::new();
+
+        // Create tree from worktree
+        let tree_oid = self.create_tree(&Path::new(&self.worktree))?;
+
+        // Add tree hash
+        commit_data.extend_from_slice(b"tree ");
+        commit_data.extend_from_slice(tree_oid.as_bytes());
+
+        // New line
+        commit_data.extend_from_slice(b"\n");
+        // Add datetime
+        let datetime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        commit_data.extend_from_slice(b"timestamp ");
+        commit_data.extend_from_slice(datetime.as_bytes());
+
+        // 2 new lines
+        commit_data.extend_from_slice(b"\n");
+        commit_data.extend_from_slice(b"\n");
+
+        // Add commit message
+        commit_data.extend_from_slice(message.as_bytes());
+        commit_data.extend_from_slice(b"\n");
+
+        let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
+        Ok(hash)
     }
 }

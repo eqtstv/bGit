@@ -7,6 +7,7 @@ pub enum Command {
     WriteTree,
     ReadTree(String),
     GetTree(String),
+    Commit(String),
     Unknown(String),
 }
 
@@ -47,6 +48,12 @@ impl Command {
                     return Command::Unknown("No tree hash provided for get-tree".to_string());
                 }
                 Command::GetTree(args[1].clone())
+            }
+            "commit" => {
+                if args.len() < 2 {
+                    return Command::Unknown("No commit message provided for commit".to_string());
+                }
+                Command::Commit(args[1].clone())
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

@@ -480,3 +480,110 @@ fn test_get_tree_data_invalid_hash() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Failed to read object"));
 }
+
+#[test]
+fn test_commit_success() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create some files
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+    fs::write(test_dir.join("file1.txt"), "Content 1").unwrap();
+    fs::write(test_dir.join("file2.txt"), "Content 2").unwrap();
+
+    // Create tree
+    let tree_hash = repo.create_tree(&Path::new(&repo_path)).unwrap();
+
+    // Create commit
+    let commit_message = "Initial commit";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Verify commit hash format
+    assert_eq!(commit_hash.len(), 40);
+    assert!(commit_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Verify commit object exists
+    let (dir, file) = commit_hash.split_at(2);
+    let object_path = format!("{}/{}/objects/{}/{}", repo_path, GIT_DIR, dir, file);
+    assert!(Path::new(&object_path).exists());
+
+    // Verify commit content
+    let commit_data = repo.get_object(&commit_hash).unwrap();
+    let commit_str = String::from_utf8(commit_data).unwrap();
+    assert!(commit_str.contains(&format!("tree {}", tree_hash)));
+    assert!(commit_str.contains(commit_message));
+}
+
+#[test]
+fn test_commit_empty_message() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create empty directory
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Try to create commit with empty message
+    let result = repo.create_commit("");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Commit message cannot be empty")
+    );
+
+    // Try to create commit with whitespace-only message
+    let result = repo.create_commit("   ");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Commit message cannot be empty")
+    );
+}
+
+#[test]
+fn test_commit_multiple_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create complex directory structure
+    let test_dir = temp_dir.path().join("test_dir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Create files
+    fs::write(test_dir.join("file1.txt"), "Content 1").unwrap();
+    fs::write(test_dir.join("file2.txt"), "Content 2").unwrap();
+
+    // Create subdirectory
+    let subdir = test_dir.join("subdir");
+    fs::create_dir(&subdir).unwrap();
+    fs::write(subdir.join("nested.txt"), "Nested content").unwrap();
+
+    // Create tree
+    let tree_hash = repo.create_tree(&Path::new(&repo_path)).unwrap();
+
+    // Create commit
+    let commit_message = "Commit with multiple files";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Verify commit hash format
+    assert_eq!(commit_hash.len(), 40);
+    assert!(commit_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Verify commit content
+    let commit_data = repo.get_object(&commit_hash).unwrap();
+    let commit_str = String::from_utf8(commit_data).unwrap();
+    assert!(commit_str.contains(&format!("tree {}", tree_hash)));
+    assert!(commit_str.contains(commit_message));
+}
