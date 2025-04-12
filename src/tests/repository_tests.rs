@@ -1001,3 +1001,245 @@ fn test_is_ignored_with_directory_pattern() {
     fs::write(&other_file, "test").unwrap();
     assert!(!repo.is_ignored(&other_file));
 }
+
+#[test]
+fn test_head_content_after_init() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Verify HEAD content after initialization
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    let head_content = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(head_content, "ref: refs/heads/master\n");
+
+    // Verify log fails with appropriate error message
+    let result = repo.log();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("No commits found"));
+}
+
+#[test]
+fn test_first_commit_handling() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create a file for the first commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+
+    // Create first commit
+    let commit_message = "First commit";
+    let commit_hash = repo.create_commit(commit_message).unwrap();
+
+    // Verify HEAD now points to the commit hash
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    let head_content = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(head_content.trim(), commit_hash);
+
+    // Verify commit has no parent
+    let commit = repo.get_commit(&commit_hash).unwrap();
+    assert!(commit.parent.is_none());
+    assert!(!commit._tree.is_empty());
+
+    // Verify log works now
+    assert!(repo.log().is_ok());
+}
+
+#[test]
+fn test_empty_to_committed_transition() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Verify initial HEAD content
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    let initial_head = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(initial_head, "ref: refs/heads/master\n");
+
+    // Create first commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let first_commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Verify HEAD now points to first commit
+    let head_after_first = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(head_after_first.trim(), first_commit_hash);
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit_hash = repo.create_commit("Second commit").unwrap();
+
+    // Verify HEAD now points to second commit
+    let head_after_second = fs::read_to_string(&head_path).unwrap();
+    assert_eq!(head_after_second.trim(), second_commit_hash);
+
+    // Verify second commit has first commit as parent
+    let second_commit = repo.get_commit(&second_commit_hash).unwrap();
+    assert_eq!(second_commit.parent.unwrap(), first_commit_hash);
+}
+
+#[test]
+fn test_create_tag() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create a commit to tag
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+    // Create a tag
+    let tag_name = "v1.0.0";
+    assert!(repo.create_tag(tag_name, &commit_hash).is_ok());
+
+    // Verify tag file exists and contains correct hash
+    let tag_path = format!("{}/{}/refs/tags/{}", repo_path, GIT_DIR, tag_name);
+    let tag_content = fs::read_to_string(&tag_path).unwrap();
+    assert_eq!(tag_content.trim(), commit_hash);
+}
+
+#[test]
+fn test_create_multiple_tags() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let first_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Create tags for both commits
+    assert!(repo.create_tag("v1.0.0", &first_commit).is_ok());
+    assert!(repo.create_tag("v1.1.0", &second_commit).is_ok());
+
+    // Verify both tags exist with correct hashes
+    let tag1_path = format!("{}/{}/refs/tags/v1.0.0", repo_path, GIT_DIR);
+    let tag2_path = format!("{}/{}/refs/tags/v1.1.0", repo_path, GIT_DIR);
+
+    let tag1_content = fs::read_to_string(&tag1_path).unwrap();
+    let tag2_content = fs::read_to_string(&tag2_path).unwrap();
+
+    assert_eq!(tag1_content.trim(), first_commit);
+    assert_eq!(tag2_content.trim(), second_commit);
+}
+
+#[test]
+fn test_create_tag_invalid_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to create tag with invalid commit hash
+    let result = repo.create_tag("v1.0.0", "invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+}
+
+#[test]
+fn test_create_tag_overwrite() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit and tag
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let first_commit = repo.create_commit("Initial commit").unwrap();
+    assert!(repo.create_tag("v1.0.0", &first_commit).is_ok());
+
+    // Create second commit and overwrite tag
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+    assert!(repo.create_tag("v1.0.0", &second_commit).is_ok());
+
+    // Verify tag now points to second commit
+    let tag_path = format!("{}/{}/refs/tags/v1.0.0", repo_path, GIT_DIR);
+    let tag_content = fs::read_to_string(&tag_path).unwrap();
+    assert_eq!(tag_content.trim(), second_commit);
+}
+
+#[test]
+fn test_hash_validation() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Test get_object with invalid hash
+    let result = repo.get_object("invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+
+    // Test checkout with invalid hash
+    let result = repo.checkout("invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+
+    // Test create_tag with invalid hash
+    let result = repo.create_tag("v1.0.0", "invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+
+    // Test set_ref with invalid hash
+    let result = repo.set_ref("HEAD", "invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+
+    // Test with hash that's too short
+    let result = repo.get_object("123");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Invalid hash format: 123"));
+
+    // Test with hash that's too long
+    let result = repo.get_object(&"a".repeat(41));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Invalid hash format"));
+
+    // Test with hash containing non-hex characters
+    let result = repo.get_object(&"g".repeat(40));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Invalid hash format"));
+}

@@ -124,11 +124,16 @@ impl Repository {
         Ok(hash_str)
     }
 
-    pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
-        // Validate hash format (should be 40 hex characters)
+    fn validate_commit_hash(hash: &str) -> Result<(), String> {
         if hash.len() != 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err("Invalid hash format".to_string());
+            return Err(format!("Invalid hash format: {}", hash));
         }
+        Ok(())
+    }
+
+    pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
+        // Validate hash format
+        Self::validate_commit_hash(hash)?;
 
         // Create object path
         let (dir, file) = hash.split_at(2);
@@ -486,6 +491,9 @@ impl Repository {
     }
 
     pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
+        // Validate hash format
+        Self::validate_commit_hash(commit_hash)?;
+
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
         fs::write(&ref_path, commit_hash)
             .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
@@ -581,10 +589,8 @@ impl Repository {
     }
 
     pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
-        // Check if the commit hash is valid
-        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("Invalid hash format: {}", commit_hash));
-        }
+        // Validate hash format
+        Self::validate_commit_hash(commit_hash)?;
 
         // Get the commit from the hash
         let commit = self
@@ -601,6 +607,9 @@ impl Repository {
     }
 
     pub fn create_tag(&self, tag_name: &str, commit_hash: &str) -> Result<(), String> {
+        // Validate hash format
+        Self::validate_commit_hash(commit_hash)?;
+
         self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
     }
 }
