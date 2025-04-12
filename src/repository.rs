@@ -550,6 +550,11 @@ impl Repository {
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
         let head_hash = self.get_head()?;
+
+        if head_hash.contains("ref:") {
+            return Err("No commits found".to_string());
+        }
+
         let mut current_hash = Some(head_hash);
 
         while let Some(hash) = current_hash {
