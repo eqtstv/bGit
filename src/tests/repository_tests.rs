@@ -1,4 +1,4 @@
-use crate::repository::{GIT_DIR, ObjectType, Repository};
+use crate::repository::{GIT_DIR, HEAD, ObjectType, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -565,7 +565,7 @@ fn test_set_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Set HEAD manually
-    assert!(repo.set_head(&commit_hash).is_ok());
+    assert!(repo.set_ref(HEAD, &commit_hash).is_ok());
 
     // Verify HEAD content
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
@@ -586,13 +586,13 @@ fn test_get_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Get HEAD
-    let head_hash = repo.get_head().unwrap();
+    let head_hash = repo.get_ref(HEAD).unwrap();
     assert_eq!(head_hash, commit_hash);
 
     // Test getting HEAD when it doesn't exist
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     fs::remove_file(&head_path).unwrap();
-    assert!(repo.get_head().is_err());
+    assert!(repo.get_ref(HEAD).is_err());
 }
 
 #[test]
@@ -783,7 +783,7 @@ fn test_checkout_success() {
     assert!(repo.checkout(&first_hash).is_ok());
 
     // Verify HEAD points to first commit
-    let head_hash = repo.get_head().unwrap();
+    let head_hash = repo.get_ref(HEAD).unwrap();
     assert_eq!(head_hash, first_hash);
 
     // Verify worktree is empty (first commit had no files)
@@ -794,7 +794,7 @@ fn test_checkout_success() {
     assert!(repo.checkout(&second_hash).is_ok());
 
     // Verify HEAD points to second commit
-    let head_hash = repo.get_head().unwrap();
+    let head_hash = repo.get_ref(HEAD).unwrap();
     assert_eq!(head_hash, second_hash);
 
     // Verify worktree has the files from second commit

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 pub const GIT_DIR: &str = ".bgit";
+pub const HEAD: &str = "HEAD";
 
 #[derive(Debug)]
 pub enum ObjectType {
@@ -454,7 +455,7 @@ impl Repository {
         commit_data.extend_from_slice(b"\n");
 
         // Add parent commit if HEAD exists and contains a valid commit hash
-        if let Ok(parent_hash) = self.get_head() {
+        if let Ok(parent_hash) = self.get_ref(HEAD) {
             // Only add parent if it's a valid commit hash (40 hex characters)
             if parent_hash.len() == 40 && parent_hash.chars().all(|c| c.is_ascii_hexdigit()) {
                 commit_data.extend_from_slice(b"parent ");
@@ -479,20 +480,20 @@ impl Repository {
         let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
 
         // Set HEAD to point to the new commit
-        self.set_head(&hash)?;
+        self.set_ref(HEAD, &hash)?;
 
         Ok(hash)
     }
 
-    pub fn set_head(&self, commit_hash: &str) -> Result<(), String> {
-        let head_path = format!("{}/HEAD", self.gitdir);
+    pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
+        let head_path = format!("{}/{}", self.gitdir, ref_name);
         fs::write(&head_path, commit_hash)
             .map_err(|e| format!("Failed to update HEAD file: {}", e))?;
         Ok(())
     }
 
-    pub fn get_head(&self) -> Result<String, String> {
-        let head_path = format!("{}/HEAD", self.gitdir);
+    pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
+        let head_path = format!("{}/{}", self.gitdir, ref_name);
         fs::read_to_string(&head_path)
             .map_err(|e| format!("Failed to read HEAD file: {}", e))
             .map(|content| content.trim().to_string())
@@ -549,7 +550,7 @@ impl Repository {
 
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
-        let head_hash = self.get_head()?;
+        let head_hash = self.get_ref(HEAD)?;
 
         if head_hash.contains("ref:") {
             return Err("No commits found".to_string());
@@ -594,8 +595,14 @@ impl Repository {
         self.read_tree(&commit._tree, Path::new(&self.worktree))?;
 
         // Set HEAD to point to the new commit
-        self.set_head(commit_hash)?;
+        self.set_ref(HEAD, commit_hash)?;
 
+        Ok(())
+    }
+
+    pub fn create_tag(&self, tag_name: &str, commit_hash: &str) -> Result<(), String> {
+        let tag_path = format!("{}/refs/tags/{}", self.gitdir, tag_name);
+        fs::write(&tag_path, commit_hash).map_err(|e| format!("Failed to create tag: {}", e))?;
         Ok(())
     }
 }

@@ -10,6 +10,7 @@ pub enum Command {
     Commit(String),
     Log,
     Checkout(String),
+    Tag(String, String),
     Unknown(String),
 }
 
@@ -63,6 +64,12 @@ impl Command {
                     return Command::Unknown("No commit hash provided for checkout".to_string());
                 }
                 Command::Checkout(args[1].clone())
+            }
+            "tag" => {
+                if args.len() < 3 {
+                    return Command::Unknown("No commit hash provided for tag".to_string());
+                }
+                Command::Tag(args[1].clone(), args[2].clone())
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

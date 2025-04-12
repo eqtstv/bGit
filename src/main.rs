@@ -95,6 +95,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Tag(tag_name, commit_hash) => match repo.create_tag(&tag_name, &commit_hash) {
+            Ok(_) => println!("Tag {} created successfully", tag_name),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);
