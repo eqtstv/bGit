@@ -486,16 +486,16 @@ impl Repository {
     }
 
     pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
-        let head_path = format!("{}/{}", self.gitdir, ref_name);
-        fs::write(&head_path, commit_hash)
-            .map_err(|e| format!("Failed to update HEAD file: {}", e))?;
+        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+        fs::write(&ref_path, commit_hash)
+            .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
         Ok(())
     }
 
     pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
-        let head_path = format!("{}/{}", self.gitdir, ref_name);
-        fs::read_to_string(&head_path)
-            .map_err(|e| format!("Failed to read HEAD file: {}", e))
+        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+        fs::read_to_string(&ref_path)
+            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))
             .map(|content| content.trim().to_string())
     }
 
@@ -601,8 +601,6 @@ impl Repository {
     }
 
     pub fn create_tag(&self, tag_name: &str, commit_hash: &str) -> Result<(), String> {
-        let tag_path = format!("{}/refs/tags/{}", self.gitdir, tag_name);
-        fs::write(&tag_path, commit_hash).map_err(|e| format!("Failed to create tag: {}", e))?;
-        Ok(())
+        self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
     }
 }
