@@ -626,7 +626,7 @@ impl Repository {
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
         if value == "@" {
-            return Ok(self.get_ref(HEAD)?);
+            return self.get_ref(HEAD);
         }
 
         // First check if it's a direct hash
@@ -635,7 +635,7 @@ impl Repository {
         }
 
         let refs_to_try = [
-            format!("{}", value),
+            value.to_string(),
             format!("refs/{}", value),
             format!("refs/tags/{}", value),
             format!("refs/heads/{}", value),
