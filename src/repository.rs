@@ -131,9 +131,16 @@ impl Repository {
         Ok(())
     }
 
+    fn is_hash(value: &str) -> Result<bool, String> {
+        if value.len() != 40 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
         // Validate hash format
-        Self::validate_commit_hash(hash)?;
+        let hash = self.get_oid_hash(hash)?;
 
         // Create object path
         let (dir, file) = hash.split_at(2);
@@ -304,8 +311,10 @@ impl Repository {
         // Empty the current directory first
         self.empty_current_directory(path)?;
 
+        let tree_oid = self.get_oid_hash(tree_oid)?;
+
         // Get the tree object
-        let tree_data = self.get_object(tree_oid)?;
+        let tree_data = self.get_object(tree_oid.as_str())?;
 
         // Parse tree entries
         let mut pos = 0;
@@ -397,7 +406,8 @@ impl Repository {
         tree_oid: &str,
     ) -> Result<Vec<(String, String, String, ObjectType)>, String> {
         // Get the raw object data
-        let tree_data = self.get_object(tree_oid)?;
+        let tree_oid = self.get_oid_hash(tree_oid)?;
+        let tree_data = self.get_object(tree_oid.as_str())?;
 
         let mut entries = Vec::new();
         let mut pos = 0;
@@ -509,7 +519,8 @@ impl Repository {
 
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
         // Get the raw commit data
-        let commit_data = self.get_object(hash)?;
+        let hash = self.get_oid_hash(hash)?;
+        let commit_data = self.get_object(hash.as_str())?;
         let commit_str =
             String::from_utf8(commit_data).map_err(|_| "Invalid commit encoding".to_string())?;
 
@@ -590,18 +601,18 @@ impl Repository {
 
     pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
         // Validate hash format
-        Self::validate_commit_hash(commit_hash)?;
+        let commit_hash = Self::get_oid_hash(self, commit_hash)?;
 
         // Get the commit from the hash
         let commit = self
-            .get_commit(commit_hash)
+            .get_commit(commit_hash.as_str())
             .map_err(|_| format!("Commit with hash: {} not found", commit_hash))?;
 
         // Read the commit tree
         self.read_tree(&commit._tree, Path::new(&self.worktree))?;
 
         // Set HEAD to point to the new commit
-        self.set_ref(HEAD, commit_hash)?;
+        self.set_ref(HEAD, commit_hash.as_str())?;
 
         Ok(())
     }
@@ -611,5 +622,32 @@ impl Repository {
         Self::validate_commit_hash(commit_hash)?;
 
         self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
+    }
+
+    pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
+        // First check if it's a direct hash
+        if Self::is_hash(value)? {
+            return Ok(value.to_string());
+        }
+
+        // If not a hash, try to resolve it as a reference
+        match self.get_ref(value) {
+            Ok(ref_hash) => {
+                // If the reference points to another reference (e.g., "ref: refs/heads/master")
+                if ref_hash.starts_with("ref: ") {
+                    // Extract the reference path and try to resolve it
+                    let ref_path = ref_hash.strip_prefix("ref: ").unwrap().trim();
+                    self.get_ref(ref_path)
+                } else {
+                    // If it's a direct hash, validate it
+                    if Self::is_hash(&ref_hash)? {
+                        Ok(ref_hash)
+                    } else {
+                        Err(format!("Invalid hash format: {}", ref_hash))
+                    }
+                }
+            }
+            Err(_e) => Err(format!("Invalid hash format: {}", value)),
+        }
     }
 }

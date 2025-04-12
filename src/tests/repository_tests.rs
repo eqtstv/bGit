@@ -821,7 +821,11 @@ fn test_checkout_invalid_hash() {
     // Try to checkout with invalid hash format
     let result = repo.checkout("not40chars");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
+    assert!(
+        result.as_ref().unwrap_err().contains("Invalid hash format"),
+        "Expected error message to contain 'Invalid hash format', but got: {}",
+        result.unwrap_err()
+    );
 
     // Try to checkout non-existent commit with valid hash format
     let result = repo.checkout("0000000000000000000000000000000000000000");
@@ -1242,4 +1246,88 @@ fn test_hash_validation() {
     let result = repo.get_object(&"g".repeat(40));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid hash format"));
+}
+
+#[test]
+fn test_get_oid_hash() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Test with direct hash
+    let result = repo.get_oid_hash(&first_commit);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), first_commit);
+
+    // Test with HEAD reference
+    let result = repo.get_oid_hash("HEAD");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), second_commit);
+
+    // Test with tag reference
+    assert!(repo.create_tag("v1.0", &first_commit).is_ok());
+    let result = repo.get_oid_hash("refs/tags/v1.0");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), first_commit);
+
+    // Test with invalid hash
+    let result = repo.get_oid_hash("invalidhash");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: invalidhash")
+    );
+
+    // Test with non-existent reference
+    let result = repo.get_oid_hash("refs/heads/nonexistent");
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Invalid hash format: refs/heads/nonexistent")
+    );
+
+    // Test with reference to reference (HEAD -> refs/heads/master)
+    let result = repo.get_oid_hash("HEAD");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), second_commit);
+}
+
+#[test]
+fn test_get_oid_hash_reference_chain() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Test resolving HEAD through reference chain
+    let result = repo.get_oid_hash("HEAD");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), first_commit);
+
+    // Create a tag pointing to the branch
+    assert!(repo.create_tag("feature-tag", &first_commit).is_ok());
+
+    // Test resolving tag through reference chain
+    let result = repo.get_oid_hash("refs/tags/feature-tag");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), first_commit);
 }
