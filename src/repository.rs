@@ -625,29 +625,31 @@ impl Repository {
     }
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
+        if value == "@" {
+            return Ok(self.get_ref(HEAD)?);
+        }
+
         // First check if it's a direct hash
         if Self::is_hash(value)? {
             return Ok(value.to_string());
         }
 
-        // If not a hash, try to resolve it as a reference
-        match self.get_ref(value) {
-            Ok(ref_hash) => {
-                // If the reference points to another reference (e.g., "ref: refs/heads/master")
-                if ref_hash.starts_with("ref: ") {
-                    // Extract the reference path and try to resolve it
-                    let ref_path = ref_hash.strip_prefix("ref: ").unwrap().trim();
-                    self.get_ref(ref_path)
-                } else {
-                    // If it's a direct hash, validate it
-                    if Self::is_hash(&ref_hash)? {
-                        Ok(ref_hash)
-                    } else {
-                        Err(format!("Invalid hash format: {}", ref_hash))
-                    }
+        let refs_to_try = [
+            format!("{}", value),
+            format!("refs/{}", value),
+            format!("refs/tags/{}", value),
+            format!("refs/heads/{}", value),
+        ];
+
+        for ref_to_try in refs_to_try {
+            match self.get_ref(ref_to_try.as_str()) {
+                Ok(ref_hash) => {
+                    return Ok(ref_hash);
                 }
+                Err(_e) => continue,
             }
-            Err(_e) => Err(format!("Invalid hash format: {}", value)),
         }
+
+        Err(format!("Invalid hash format: {}", value))
     }
 }
