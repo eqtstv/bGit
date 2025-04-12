@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 pub const GIT_DIR: &str = ".bgit";
+pub const HEAD: &str = "HEAD";
 
 #[derive(Debug)]
 pub enum ObjectType {
@@ -123,11 +124,23 @@ impl Repository {
         Ok(hash_str)
     }
 
-    pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
-        // Validate hash format (should be 40 hex characters)
+    fn validate_commit_hash(hash: &str) -> Result<(), String> {
         if hash.len() != 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err("Invalid hash format".to_string());
+            return Err(format!("Invalid hash format: {}", hash));
         }
+        Ok(())
+    }
+
+    fn is_hash(value: &str) -> Result<bool, String> {
+        if value.len() != 40 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    pub fn get_object(&self, hash: &str) -> Result<Vec<u8>, String> {
+        // Validate hash format
+        let hash = self.get_oid_hash(hash)?;
 
         // Create object path
         let (dir, file) = hash.split_at(2);
@@ -298,8 +311,10 @@ impl Repository {
         // Empty the current directory first
         self.empty_current_directory(path)?;
 
+        let tree_oid = self.get_oid_hash(tree_oid)?;
+
         // Get the tree object
-        let tree_data = self.get_object(tree_oid)?;
+        let tree_data = self.get_object(tree_oid.as_str())?;
 
         // Parse tree entries
         let mut pos = 0;
@@ -391,7 +406,8 @@ impl Repository {
         tree_oid: &str,
     ) -> Result<Vec<(String, String, String, ObjectType)>, String> {
         // Get the raw object data
-        let tree_data = self.get_object(tree_oid)?;
+        let tree_oid = self.get_oid_hash(tree_oid)?;
+        let tree_data = self.get_object(tree_oid.as_str())?;
 
         let mut entries = Vec::new();
         let mut pos = 0;
@@ -454,7 +470,7 @@ impl Repository {
         commit_data.extend_from_slice(b"\n");
 
         // Add parent commit if HEAD exists and contains a valid commit hash
-        if let Ok(parent_hash) = self.get_head() {
+        if let Ok(parent_hash) = self.get_ref(HEAD) {
             // Only add parent if it's a valid commit hash (40 hex characters)
             if parent_hash.len() == 40 && parent_hash.chars().all(|c| c.is_ascii_hexdigit()) {
                 commit_data.extend_from_slice(b"parent ");
@@ -479,28 +495,32 @@ impl Repository {
         let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
 
         // Set HEAD to point to the new commit
-        self.set_head(&hash)?;
+        self.set_ref(HEAD, &hash)?;
 
         Ok(hash)
     }
 
-    pub fn set_head(&self, commit_hash: &str) -> Result<(), String> {
-        let head_path = format!("{}/HEAD", self.gitdir);
-        fs::write(&head_path, commit_hash)
-            .map_err(|e| format!("Failed to update HEAD file: {}", e))?;
+    pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
+        // Validate hash format
+        Self::validate_commit_hash(commit_hash)?;
+
+        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+        fs::write(&ref_path, commit_hash)
+            .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
         Ok(())
     }
 
-    pub fn get_head(&self) -> Result<String, String> {
-        let head_path = format!("{}/HEAD", self.gitdir);
-        fs::read_to_string(&head_path)
-            .map_err(|e| format!("Failed to read HEAD file: {}", e))
+    pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
+        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+        fs::read_to_string(&ref_path)
+            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))
             .map(|content| content.trim().to_string())
     }
 
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
         // Get the raw commit data
-        let commit_data = self.get_object(hash)?;
+        let hash = self.get_oid_hash(hash)?;
+        let commit_data = self.get_object(hash.as_str())?;
         let commit_str =
             String::from_utf8(commit_data).map_err(|_| "Invalid commit encoding".to_string())?;
 
@@ -549,7 +569,12 @@ impl Repository {
 
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
-        let head_hash = self.get_head()?;
+        let head_hash = self.get_ref(HEAD)?;
+
+        if head_hash.contains("ref:") {
+            return Err("No commits found".to_string());
+        }
+
         let mut current_hash = Some(head_hash);
 
         while let Some(hash) = current_hash {
@@ -575,22 +600,56 @@ impl Repository {
     }
 
     pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
-        // Check if the commit hash is valid
-        if commit_hash.len() != 40 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("Invalid hash format: {}", commit_hash));
-        }
+        // Validate hash format
+        let commit_hash = Self::get_oid_hash(self, commit_hash)?;
 
         // Get the commit from the hash
         let commit = self
-            .get_commit(commit_hash)
+            .get_commit(commit_hash.as_str())
             .map_err(|_| format!("Commit with hash: {} not found", commit_hash))?;
 
         // Read the commit tree
         self.read_tree(&commit._tree, Path::new(&self.worktree))?;
 
         // Set HEAD to point to the new commit
-        self.set_head(commit_hash)?;
+        self.set_ref(HEAD, commit_hash.as_str())?;
 
         Ok(())
+    }
+
+    pub fn create_tag(&self, tag_name: &str, commit_hash: &str) -> Result<(), String> {
+        // Validate hash format
+        Self::validate_commit_hash(commit_hash)?;
+
+        self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
+    }
+
+    pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
+        if value == "@" {
+            return self.get_ref(HEAD);
+        }
+
+        // First check if it's a direct hash
+        if Self::is_hash(value)? {
+            return Ok(value.to_string());
+        }
+
+        let refs_to_try = [
+            value.to_string(),
+            format!("refs/{}", value),
+            format!("refs/tags/{}", value),
+            format!("refs/heads/{}", value),
+        ];
+
+        for ref_to_try in refs_to_try {
+            match self.get_ref(ref_to_try.as_str()) {
+                Ok(ref_hash) => {
+                    return Ok(ref_hash);
+                }
+                Err(_e) => continue,
+            }
+        }
+
+        Err(format!("Invalid hash format: {}", value))
     }
 }
