@@ -105,7 +105,7 @@ fn main() {
             }
         },
         Command::Visualize => match Visualizer::new(repo).visualize() {
-            Ok(output) => println!("{}", output),
+            Ok(_output) => println!(""),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

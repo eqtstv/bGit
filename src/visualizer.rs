@@ -2,6 +2,13 @@ use crate::repository::Repository;
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::printer::{DotPrinter, PrinterContext};
+use std::fs;
+use std::io::Write;
+use std::net::TcpListener;
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
+use tempfile::NamedTempFile;
 
 pub struct Visualizer {
     repo: Repository,
@@ -12,7 +19,7 @@ impl Visualizer {
         Self { repo }
     }
 
-    pub fn visualize(&self) -> Result<String, String> {
+    pub fn visualize(&self) -> Result<(), String> {
         let mut graph = graph!(di id!("commit_graph"));
 
         // Add graph attributes for vertical layout
@@ -130,6 +137,74 @@ impl Visualizer {
 
         // Generate DOT format output
         let dot_output = graph.print(&mut PrinterContext::default());
-        Ok(dot_output)
+
+        // Create a temporary file for the DOT output
+        let mut dot_file = NamedTempFile::new().map_err(|e| e.to_string())?;
+        dot_file
+            .write_all(dot_output.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let dot_path = dot_file.path().to_path_buf();
+
+        // Create a temporary file for the SVG output
+        let svg_file = NamedTempFile::new().map_err(|e| e.to_string())?;
+        let svg_path = svg_file.path().to_path_buf();
+
+        // Convert DOT to SVG using Graphviz
+        let output = Command::new("dot")
+            .arg("-Tsvg")
+            .arg(dot_path)
+            .arg("-o")
+            .arg(&svg_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to generate SVG: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        // Read the SVG content
+        let svg_content = fs::read_to_string(&svg_path).map_err(|e| e.to_string())?;
+
+        // Start a simple HTTP server
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        println!("Opening visualization in browser at {}...", url);
+
+        // Open the browser in a separate thread
+        let url_clone = url.clone();
+        thread::spawn(move || {
+            if let Err(e) = webbrowser::open(&url_clone) {
+                eprintln!("Failed to open browser: {}", e);
+            }
+        });
+
+        // Serve the SVG content
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut stream) => {
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: {}\r\n\r\n{}",
+                        svg_content.len(),
+                        svg_content
+                    );
+                    stream
+                        .write_all(response.as_bytes())
+                        .map_err(|e| e.to_string())?;
+                    break;
+                }
+                Err(e) => return Err(format!("Failed to accept connection: {}", e)),
+            }
+        }
+
+        // Keep the server running for a while
+        println!("Visualization opened. The server will be kept alive for 5 seconds...");
+        thread::sleep(Duration::from_secs(5));
+
+        Ok(())
     }
 }
