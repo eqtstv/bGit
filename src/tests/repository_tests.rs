@@ -682,7 +682,7 @@ fn test_get_commit() {
     assert_eq!(commit.message, commit_message);
     assert!(commit.parent.is_none());
     assert!(!commit.timestamp.is_empty());
-    assert!(!commit._tree.is_empty());
+    assert!(!commit.tree.is_empty());
 
     // Create second commit
     let second_message = "Second commit";
@@ -693,7 +693,7 @@ fn test_get_commit() {
     assert_eq!(second_commit.message, second_message);
     assert_eq!(second_commit.parent.unwrap(), commit_hash);
     assert!(!second_commit.timestamp.is_empty());
-    assert!(!second_commit._tree.is_empty());
+    assert!(!second_commit.tree.is_empty());
 
     // Test invalid commit hash
     let result = repo.get_commit("invalidhash");
@@ -718,30 +718,31 @@ fn test_log() {
 
     // Create third commit
     let third_message = "Third commit";
-    repo.create_commit(third_message).unwrap();
+    let third_hash = repo.create_commit(third_message).unwrap();
 
-    // Test log output
-    assert!(repo.log().is_ok());
-
-    // Verify log shows all commits in correct order
-    let output = std::process::Command::new("cargo")
-        .args(["test", "--", "test_log", "--nocapture"])
-        .output()
+    // Get all commits in order
+    let commits = repo
+        .iter_commits_and_parents(vec![third_hash.clone()])
         .unwrap();
-    let output_str = String::from_utf8(output.stdout).unwrap();
 
-    // Verify commit messages appear in correct order
-    assert!(output_str.contains(third_message));
-    assert!(output_str.contains(second_message));
-    assert!(output_str.contains(first_message));
+    // Verify commits are in correct order
+    assert_eq!(commits.len(), 3);
+    assert_eq!(commits[0], third_hash);
+    assert_eq!(commits[1], second_hash);
+    assert_eq!(commits[2], first_hash);
 
-    // Verify commit hashes appear
-    assert!(output_str.contains(&first_hash));
-    assert!(output_str.contains(&second_hash));
+    // Verify commit data
+    let third_commit = repo.get_commit(&third_hash).unwrap();
+    assert_eq!(third_commit.message, third_message);
+    assert_eq!(third_commit.parent.unwrap(), second_hash);
 
-    // Verify parent relationships
-    assert!(output_str.contains(&format!("parent {}", first_hash)));
-    assert!(output_str.contains(&format!("parent {}", second_hash)));
+    let second_commit = repo.get_commit(&second_hash).unwrap();
+    assert_eq!(second_commit.message, second_message);
+    assert_eq!(second_commit.parent.unwrap(), first_hash);
+
+    let first_commit = repo.get_commit(&first_hash).unwrap();
+    assert_eq!(first_commit.message, first_message);
+    assert!(first_commit.parent.is_none());
 }
 
 #[test]
@@ -1049,7 +1050,7 @@ fn test_first_commit_handling() {
     // Verify commit has no parent
     let commit = repo.get_commit(&commit_hash).unwrap();
     assert!(commit.parent.is_none());
-    assert!(!commit._tree.is_empty());
+    assert!(!commit.tree.is_empty());
 
     // Verify log works now
     assert!(repo.log().is_ok());

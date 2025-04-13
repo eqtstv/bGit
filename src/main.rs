@@ -1,10 +1,12 @@
 mod cli;
 mod repository;
+mod visualizer;
 
 use cli::Command;
 use repository::{ObjectType, Repository};
 use std::fs;
 use std::path::Path;
+use visualizer::Visualizer;
 
 fn main() {
     let repo = Repository::new(".");
@@ -97,6 +99,20 @@ fn main() {
         },
         Command::Tag(tag_name, commit_hash) => match repo.create_tag(&tag_name, &commit_hash) {
             Ok(_) => println!("Tag {} created successfully", tag_name),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Command::Visualize => match Visualizer::new(repo).visualize() {
+            Ok(output) => println!("{}", output),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Command::IterRefs => match repo.iter_refs() {
+            Ok(output) => println!("{:?}", output),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

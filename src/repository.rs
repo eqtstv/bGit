@@ -1,4 +1,5 @@
 use sha1::{Digest, Sha1};
+use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 
@@ -14,7 +15,8 @@ pub enum ObjectType {
 
 #[derive(Debug)]
 pub struct Commit {
-    pub _tree: String,
+    pub _oid: String,
+    pub tree: String,
     pub parent: Option<String>,
     pub timestamp: String,
     pub message: String,
@@ -560,7 +562,8 @@ impl Repository {
         message = message.trim_end().to_string();
 
         Ok(Commit {
-            _tree: tree,
+            _oid: hash,
+            tree,
             parent,
             timestamp,
             message,
@@ -575,9 +578,11 @@ impl Repository {
             return Err("No commits found".to_string());
         }
 
-        let mut current_hash = Some(head_hash);
+        let current_hash = Some(head_hash);
 
-        while let Some(hash) = current_hash {
+        let commits = self.iter_commits_and_parents(vec![current_hash.clone().unwrap()])?;
+
+        for hash in commits {
             let commit = self.get_commit(&hash)?;
 
             // Print commit information
@@ -586,14 +591,11 @@ impl Repository {
             if let Some(parent) = &commit.parent {
                 println!("parent {}", parent);
             }
-            println!("tree {}", commit._tree);
+            println!("tree {}", commit.tree);
             println!("Date:   {}", commit.timestamp);
             println!();
             println!("    {}", commit.message);
             println!();
-
-            // Move to parent commit
-            current_hash = commit.parent;
         }
 
         Ok(())
@@ -609,7 +611,7 @@ impl Repository {
             .map_err(|_| format!("Commit with hash: {} not found", commit_hash))?;
 
         // Read the commit tree
-        self.read_tree(&commit._tree, Path::new(&self.worktree))?;
+        self.read_tree(&commit.tree, Path::new(&self.worktree))?;
 
         // Set HEAD to point to the new commit
         self.set_ref(HEAD, commit_hash.as_str())?;
@@ -651,5 +653,91 @@ impl Repository {
         }
 
         Err(format!("Invalid hash format: {}", value))
+    }
+
+    pub fn iter_refs(&self) -> Result<Vec<(String, String)>, String> {
+        let ref_folder = "refs";
+        let refs_dir = format!("{}/{}", self.gitdir, ref_folder);
+        let mut refs = Vec::new();
+
+        // Helper function to recursively collect refs
+        fn collect_refs(
+            path: &Path,
+            ref_folder: &str,
+            refs: &mut Vec<(String, String)>,
+        ) -> Result<(), String> {
+            let files_to_ignore = [".DS_Store"];
+
+            for entry in
+                fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?
+            {
+                let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+                let entry_path = entry.path();
+
+                if files_to_ignore
+                    .iter()
+                    .any(|f| f == &entry_path.file_name().unwrap().to_string_lossy())
+                {
+                    continue;
+                }
+
+                if entry_path.is_dir() {
+                    collect_refs(&entry_path, ref_folder, refs)?;
+                } else {
+                    let content = fs::read_to_string(&entry_path).map_err(|e| {
+                        format!(
+                            "Failed to read ref file {}: {}",
+                            entry_path.to_string_lossy(),
+                            e
+                        )
+                    })?;
+                    let hash = content.trim();
+
+                    // Get the relative path from refs directory
+                    let ref_name = entry_path
+                        .strip_prefix(path.parent().unwrap())
+                        .map_err(|e| format!("Failed to get relative path: {}", e))?
+                        .to_string_lossy()
+                        .to_string();
+
+                    refs.push((format!("{}/{}", ref_folder, ref_name), hash.to_string()));
+                }
+            }
+            Ok(())
+        }
+
+        // Start collecting refs from the refs directory
+        collect_refs(Path::new(&refs_dir), ref_folder, &mut refs)?;
+
+        Ok(refs)
+    }
+
+    pub fn iter_commits_and_parents(&self, oids: Vec<String>) -> Result<Vec<String>, String> {
+        let mut visited: Vec<String> = Vec::new();
+        let mut queue: VecDeque<String> = VecDeque::new();
+        let mut result = Vec::new();
+
+        for oid in oids {
+            queue.push_back(oid);
+        }
+
+        while let Some(oid) = queue.pop_back() {
+            if visited.contains(&oid) {
+                continue;
+            }
+
+            visited.push(oid.clone());
+
+            let oid_str = oid.clone();
+            result.push(oid_str.clone());
+
+            let commit = self.get_commit(&oid_str)?;
+
+            if let Some(parent) = &commit.parent {
+                queue.push_back(parent.clone());
+            }
+        }
+
+        Ok(result)
     }
 }
