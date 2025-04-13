@@ -9,6 +9,7 @@ sha1 = "0.10.5"
 tempfile = "3.8.1"
 regex = "1.10.2"
 chrono = "0.4.40"
+graphviz-rust = "0.9.3"
 
 
 [dev-dependencies]

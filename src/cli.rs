@@ -11,6 +11,8 @@ pub enum Command {
     Log,
     Checkout(String),
     Tag(String, String),
+    Visualize,
+    IterRefs,
     Unknown(String),
 }
 
@@ -71,6 +73,13 @@ impl Command {
                 }
                 Command::Tag(args[1].clone(), args[2].clone())
             }
+            "iter-refs" => {
+                if args.len() > 1 {
+                    return Command::Unknown("iter-refs does not take any arguments".to_string());
+                }
+                Command::IterRefs
+            }
+            "visualize" => Command::Visualize,
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
     }
