@@ -578,9 +578,11 @@ impl Repository {
             return Err("No commits found".to_string());
         }
 
-        let mut current_hash = Some(head_hash);
+        let current_hash = Some(head_hash);
 
-        while let Some(hash) = current_hash {
+        let commits = self.iter_commits_and_parents(vec![current_hash.clone().unwrap()])?;
+
+        for hash in commits {
             let commit = self.get_commit(&hash)?;
 
             // Print commit information
@@ -594,9 +596,6 @@ impl Repository {
             println!();
             println!("    {}", commit.message);
             println!();
-
-            // Move to parent commit
-            current_hash = commit.parent;
         }
 
         Ok(())
