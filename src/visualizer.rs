@@ -184,7 +184,7 @@ impl Visualizer {
         });
 
         // Serve the SVG content
-        for stream in listener.incoming() {
+        if let Some(stream) = listener.incoming().next() {
             match stream {
                 Ok(mut stream) => {
                     let response = format!(
@@ -195,7 +195,6 @@ impl Visualizer {
                     stream
                         .write_all(response.as_bytes())
                         .map_err(|e| e.to_string())?;
-                    break;
                 }
                 Err(e) => return Err(format!("Failed to accept connection: {}", e)),
             }
