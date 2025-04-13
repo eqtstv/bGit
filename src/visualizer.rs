@@ -39,7 +39,27 @@ impl Visualizer {
                 .next()
                 .unwrap_or("")
                 .replace('"', "\\\"");
-            let label = format!("\"{}\\n{}\"", short_hash, first_line);
+
+            // Find any tags pointing to this commit
+            let tags: Vec<String> = refs
+                .iter()
+                .filter(|(ref_name, hash)| {
+                    ref_name.starts_with("refs/tags/") && hash == commit_hash
+                })
+                .map(|(ref_name, _)| ref_name.split('/').last().unwrap_or(ref_name).to_string())
+                .collect();
+
+            // Create label with hash, tags, and commit message
+            let mut label = format!("\"{}\\n{}\"", short_hash, first_line);
+            if !tags.is_empty() {
+                label = format!(
+                    "\"{}\\n{}\\ntag: {}\"",
+                    short_hash,
+                    first_line,
+                    tags.join(", ")
+                );
+            }
+
             let node_id = format!("\"{}\"", commit_hash);
 
             // Style HEAD commit differently
@@ -76,29 +96,25 @@ impl Visualizer {
             }
         }
 
-        // Add refs as special nodes
+        // Add branch refs as special nodes
         for (ref_name, commit_hash) in refs {
+            // Skip tags since they're now shown in the commit node
+            if ref_name.starts_with("refs/tags/") {
+                continue;
+            }
+
             let ref_label = ref_name.split('/').next_back().unwrap_or(&ref_name);
             let ref_label = format!("\"{}\"", ref_label);
             let ref_id = format!("\"{}\"", ref_name);
             let commit_id = format!("\"{}\"", commit_hash);
 
-            // Style ref nodes differently based on whether they're branches or tags
-            let node_style = if ref_name.starts_with("refs/heads/") {
-                node!(ref_id;
-                    attr!("label", ref_label),
-                    attr!("shape", "box"),
-                    attr!("style", "filled"),
-                    attr!("fillcolor", "lightgreen")
-                )
-            } else {
-                node!(ref_id;
-                    attr!("label", ref_label),
-                    attr!("shape", "box"),
-                    attr!("style", "filled"),
-                    attr!("fillcolor", "lightyellow")
-                )
-            };
+            // Style ref nodes
+            let node_style = node!(ref_id;
+                attr!("label", ref_label),
+                attr!("shape", "box"),
+                attr!("style", "filled"),
+                attr!("fillcolor", "lightgreen")
+            );
 
             graph.add_stmt(Stmt::Node(node_style));
             graph.add_stmt(Stmt::Edge(edge!(node_id!(ref_id) => node_id!(commit_id);
