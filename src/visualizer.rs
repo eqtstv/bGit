@@ -46,7 +46,13 @@ impl Visualizer {
                 .filter(|(ref_name, hash)| {
                     ref_name.starts_with("refs/tags/") && hash == commit_hash
                 })
-                .map(|(ref_name, _)| ref_name.split('/').last().unwrap_or(ref_name).to_string())
+                .map(|(ref_name, _)| {
+                    ref_name
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(ref_name)
+                        .to_string()
+                })
                 .collect();
 
             // Create label with hash, tags, and commit message
