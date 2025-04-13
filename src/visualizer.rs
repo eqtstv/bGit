@@ -168,6 +168,91 @@ impl Visualizer {
         // Read the SVG content
         let svg_content = fs::read_to_string(&svg_path).map_err(|e| e.to_string())?;
 
+        // Wrap SVG content with interactive controls
+        let interactive_svg = format!(
+            r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Git Commit Graph</title>
+    <style>
+        body {{ margin: 0; overflow: hidden; }}
+        #svg-container {{ 
+            width: 100vw; 
+            height: 100vh; 
+            overflow: hidden;
+            cursor: grab;
+        }}
+        #svg-container:active {{ cursor: grabbing; }}
+    </style>
+</head>
+<body>
+    <div id="svg-container">
+        {}
+    </div>
+    <script>
+        const container = document.getElementById('svg-container');
+        let scale = 1;
+        let isPanning = false;
+        let startPoint = {{ x: 0, y: 0 }};
+        let transform = {{ x: 0, y: 0 }};
+
+        // Zoom functionality
+        container.addEventListener('wheel', (e) => {{
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            
+            // Get mouse position relative to container
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Calculate the point to zoom around
+            const x = (mouseX - transform.x) / scale;
+            const y = (mouseY - transform.y) / scale;
+            
+            // Apply zoom
+            scale *= delta;
+            scale = Math.min(Math.max(0.1, scale), 5);
+            
+            // Adjust transform to zoom around mouse position
+            transform.x = mouseX - x * scale;
+            transform.y = mouseY - y * scale;
+            
+            updateTransform();
+        }});
+
+        // Pan functionality
+        container.addEventListener('mousedown', (e) => {{
+            isPanning = true;
+            startPoint = {{ x: e.clientX - transform.x, y: e.clientY - transform.y }};
+        }});
+
+        container.addEventListener('mousemove', (e) => {{
+            if (!isPanning) return;
+            
+            transform.x = e.clientX - startPoint.x;
+            transform.y = e.clientY - startPoint.y;
+            
+            updateTransform();
+        }});
+
+        container.addEventListener('mouseup', () => {{
+            isPanning = false;
+        }});
+
+        container.addEventListener('mouseleave', () => {{
+            isPanning = false;
+        }});
+
+        function updateTransform() {{
+            container.style.transform = `translate(${{transform.x}}px, ${{transform.y}}px) scale(${{scale}})`;
+        }}
+    </script>
+</body>
+</html>"#,
+            svg_content
+        );
+
         // Start a simple HTTP server
         let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -183,14 +268,14 @@ impl Visualizer {
             }
         });
 
-        // Serve the SVG content
+        // Serve the interactive SVG content
         if let Some(stream) = listener.incoming().next() {
             match stream {
                 Ok(mut stream) => {
                     let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: {}\r\n\r\n{}",
-                        svg_content.len(),
-                        svg_content
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
+                        interactive_svg.len(),
+                        interactive_svg
                     );
                     stream
                         .write_all(response.as_bytes())
