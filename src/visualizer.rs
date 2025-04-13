@@ -78,7 +78,7 @@ impl Visualizer {
 
         // Add refs as special nodes
         for (ref_name, commit_hash) in refs {
-            let ref_label = ref_name.split('/').last().unwrap_or(&ref_name);
+            let ref_label = ref_name.split('/').next_back().unwrap_or(&ref_name);
             let ref_label = format!("\"{}\"", ref_label);
             let ref_id = format!("\"{}\"", ref_name);
             let commit_id = format!("\"{}\"", commit_hash);
