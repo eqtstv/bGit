@@ -663,9 +663,12 @@ impl Repository {
         Ok(())
     }
 
-    pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
+    pub fn checkout(&self, value: &str) -> Result<(), String> {
+        // Get oid hash
+        let commit_hash = Self::get_oid_hash(self, value)?;
+
         // Validate hash format
-        let commit_hash = Self::get_oid_hash(self, commit_hash)?;
+        Self::validate_commit_hash(&commit_hash)?;
 
         // Get the commit from the hash
         let commit = self
@@ -675,12 +678,23 @@ impl Repository {
         // Read the commit tree
         self.read_tree(&commit.tree, Path::new(&self.worktree))?;
 
-        // Set HEAD to point to the new commit
+        // If the value is a branch, set the HEAD to the last commit of the branch
+        // else set the HEAD to the commit hash
+        let new_head = if self.is_branch(value)? {
+            format!("refs/heads/{}", value)
+        } else {
+            commit_hash.clone()
+        };
+
+        // If the value is a branch, the ref is symbolic, else it is direct
+        let new_is_symbolic = self.is_branch(value)?;
+
+        // Set the HEAD to the new head
         self.set_ref(
             HEAD,
             RefValue {
-                value: commit_hash.clone(),
-                is_symbolic: false,
+                value: new_head,
+                is_symbolic: new_is_symbolic,
             },
             true,
         )?;
@@ -822,13 +836,38 @@ impl Repository {
         branch_name: &str,
         commit_hash: Option<String>,
     ) -> Result<(), String> {
+        let hash = match commit_hash {
+            Some(hash) => hash,
+            None => {
+                let (_, head_value) = self.get_ref_internal(HEAD, true)?;
+                head_value.value
+            }
+        };
+
         self.set_ref(
             format!("refs/heads/{}", branch_name).as_str(),
             RefValue {
-                value: commit_hash.unwrap_or("@".to_string()),
+                value: hash,
                 is_symbolic: false,
             },
             true,
         )
+    }
+
+    pub fn is_branch(&self, value: &str) -> Result<bool, String> {
+        let ref_value: RefValue =
+            match self.get_ref(format!("refs/heads/{}", value).as_str(), false) {
+                Ok(value) => value,
+                Err(_) => RefValue {
+                    value: "".to_string(),
+                    is_symbolic: false,
+                },
+            };
+
+        if ref_value.value.is_empty() {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }
