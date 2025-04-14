@@ -1430,31 +1430,31 @@ fn test_master_branch_creation_and_updates() {
     temp_dir.close().unwrap();
 }
 
-// #[test]
-// fn test_master_branch_dereferencing() {
-//     // Create a temporary directory for the test
-//     let temp_dir = tempfile::tempdir().unwrap();
-//     let repo_path = temp_dir.path().to_str().unwrap();
-//     let repo = Repository::new(repo_path);
+#[test]
+fn test_master_branch_dereferencing() {
+    // Create a temporary directory for the test
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
 
-//     // Initialize the repository
-//     assert!(repo.init().is_ok());
+    // Initialize the repository
+    assert!(repo.init().is_ok());
 
-//     // Create a test file and commit it
-//     let test_file_path = format!("{}/test.txt", repo_path);
-//     fs::write(&test_file_path, "test content").unwrap();
-//     let commit_hash = repo.create_commit("Initial commit").unwrap();
+    // Create a test file and commit it
+    let test_file_path = format!("{}/test.txt", repo_path);
+    fs::write(&test_file_path, "test content").unwrap();
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
 
-//     // Check that HEAD dereferences to the commit hash
-//     let head_ref = repo.get_ref("HEAD", true).unwrap();
-//     assert!(!head_ref.is_symbolic);
-//     assert_eq!(head_ref.value, commit_hash);
+    // Check that HEAD dereferences to the commit hash
+    let head_ref = repo.get_ref("HEAD", true).unwrap();
+    assert!(!head_ref.is_symbolic);
+    assert_eq!(head_ref.value, commit_hash);
 
-//     // Check that master branch points to the commit
-//     let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
-//     assert!(!master_ref.is_symbolic);
-//     assert_eq!(master_ref.value, commit_hash);
+    // Check that master branch points to the commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, commit_hash);
 
-//     // Clean up
-//     temp_dir.close().unwrap();
-// }
+    // Clean up
+    temp_dir.close().unwrap();
+}
