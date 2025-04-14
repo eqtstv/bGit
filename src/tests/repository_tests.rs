@@ -1023,7 +1023,11 @@ fn test_head_content_after_init() {
     // Verify log fails with appropriate error message
     let result = repo.log();
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("No commits found"));
+    assert!(
+        result.as_ref().unwrap_err().contains("No commits found"),
+        "Expected error message to contain 'No commits found', but got: {}",
+        result.unwrap_err()
+    );
 }
 
 #[test]

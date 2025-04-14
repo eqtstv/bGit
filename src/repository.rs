@@ -513,10 +513,23 @@ impl Repository {
     }
 
     pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
+        // Get the ref path
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
-        fs::read_to_string(&ref_path)
-            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))
-            .map(|content| content.trim().to_string())
+
+        // Read the ref file
+        let content = fs::read_to_string(&ref_path)
+            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))?;
+
+        // Trim the content
+        let content = content.trim();
+
+        if content.starts_with("ref:") {
+            // Extract the target ref name and recursively resolve it
+            let target_ref = content.strip_prefix("ref:").unwrap().trim();
+            self.get_ref(target_ref)
+        } else {
+            Ok(content.to_string())
+        }
     }
 
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
@@ -572,11 +585,9 @@ impl Repository {
 
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
-        let head_hash = self.get_ref(HEAD)?;
-
-        if head_hash.contains("ref:") {
-            return Err("No commits found".to_string());
-        }
+        let head_hash = self
+            .get_ref(HEAD)
+            .map_err(|e| format!("No commits found: {}", e))?;
 
         let current_hash = Some(head_hash);
 
