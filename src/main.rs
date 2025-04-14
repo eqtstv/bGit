@@ -118,6 +118,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Branch(branch_name) => match repo.create_branch(&branch_name, None) {
+            Ok(_) => println!("Branch {} created successfully", branch_name),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

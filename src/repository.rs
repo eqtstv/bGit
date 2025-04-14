@@ -740,4 +740,16 @@ impl Repository {
 
         Ok(result)
     }
+
+    pub fn create_branch(
+        &self,
+        branch_name: &str,
+        commit_hash: Option<String>,
+    ) -> Result<(), String> {
+        if let Some(commit_hash) = commit_hash {
+            self.set_ref(&format!("refs/heads/{}", branch_name), &commit_hash)
+        } else {
+            self.set_ref(&format!("refs/heads/{}", branch_name), "@")
+        }
+    }
 }
