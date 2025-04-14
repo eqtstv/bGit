@@ -504,24 +504,26 @@ impl Repository {
 
         // Set HEAD to point to the new commit
         self.set_ref(
+            HEAD,
             RefValue {
-                value: HEAD.to_string(),
+                value: hash.clone(),
                 is_symbolic: false,
             },
-            &hash,
         )?;
 
         Ok(hash)
     }
 
-    pub fn set_ref(&self, ref_value: RefValue, commit_hash: &str) -> Result<(), String> {
-        assert!(!ref_value.is_symbolic);
+    pub fn set_ref(&self, ref_name: &str, ref_value: RefValue) -> Result<(), String> {
         // Validate hash format
-        Self::validate_commit_hash(commit_hash)?;
+        Self::validate_commit_hash(&ref_value.value)?;
 
-        let ref_path = format!("{}/{}", self.gitdir, ref_value.value);
-        fs::write(&ref_path, commit_hash)
-            .map_err(|e| format!("Failed to update {} file: {}", ref_value.value, e))?;
+        assert!(!ref_value.is_symbolic);
+
+        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+
+        fs::write(&ref_path, ref_value.value)
+            .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
         Ok(())
     }
 
@@ -652,11 +654,11 @@ impl Repository {
 
         // Set HEAD to point to the new commit
         self.set_ref(
+            HEAD,
             RefValue {
-                value: HEAD.to_string(),
+                value: commit_hash.clone(),
                 is_symbolic: false,
             },
-            commit_hash.as_str(),
         )?;
 
         Ok(())
@@ -667,11 +669,11 @@ impl Repository {
         Self::validate_commit_hash(commit_hash)?;
 
         self.set_ref(
+            format!("refs/tags/{}", tag_name).as_str(),
             RefValue {
-                value: format!("refs/tags/{}", tag_name),
+                value: commit_hash.to_string(),
                 is_symbolic: false,
             },
-            commit_hash,
         )
     }
 
@@ -797,19 +799,19 @@ impl Repository {
     ) -> Result<(), String> {
         if let Some(commit_hash) = commit_hash {
             self.set_ref(
+                format!("refs/heads/{}", branch_name).as_str(),
                 RefValue {
-                    value: format!("refs/heads/{}", branch_name),
+                    value: commit_hash.clone(),
                     is_symbolic: false,
                 },
-                &commit_hash,
             )
         } else {
             self.set_ref(
+                format!("refs/heads/{}", branch_name).as_str(),
                 RefValue {
-                    value: format!("refs/heads/{}", branch_name),
+                    value: "@".to_string(),
                     is_symbolic: false,
                 },
-                "@",
             )
         }
     }

@@ -567,11 +567,11 @@ fn test_set_head() {
     // Set HEAD manually
     assert!(
         repo.set_ref(
+            HEAD,
             RefValue {
-                value: HEAD.to_string(),
+                value: commit_hash.to_string(),
                 is_symbolic: false,
             },
-            &commit_hash,
         )
         .is_ok()
     );
@@ -1239,12 +1239,13 @@ fn test_hash_validation() {
 
     // Test set_ref with invalid hash
     let result = repo.set_ref(
+        HEAD,
         RefValue {
-            value: HEAD.to_string(),
+            value: "invalidhash".to_string(),
             is_symbolic: false,
         },
-        "invalidhash",
     );
+
     assert!(result.is_err());
     assert!(
         result
