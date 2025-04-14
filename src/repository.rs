@@ -14,6 +14,12 @@ pub enum ObjectType {
 }
 
 #[derive(Debug)]
+pub struct RefValue {
+    pub value: String,
+    pub is_symbolic: bool,
+}
+
+#[derive(Debug)]
 pub struct Commit {
     pub _oid: String,
     pub tree: String,
@@ -70,6 +76,11 @@ impl Repository {
             fs::create_dir_all(&path)
                 .map_err(|e| format!("Failed to create directory {}: {}", dir, e))?;
         }
+
+        // Create master branch
+        let master_branch = format!("{}/refs/heads/master", self.gitdir);
+        fs::write(&master_branch, "")
+            .map_err(|e| format!("Failed to create master branch: {}", e))?;
 
         // Create HEAD file
         let head_path = format!("{}/HEAD", self.gitdir);
@@ -472,11 +483,11 @@ impl Repository {
         commit_data.extend_from_slice(b"\n");
 
         // Add parent commit if HEAD exists and contains a valid commit hash
-        if let Ok(parent_hash) = self.get_ref(HEAD) {
+        if let Ok(parent_hash) = self.get_ref(HEAD, true) {
             // Only add parent if it's a valid commit hash (40 hex characters)
-            if parent_hash.len() == 40 && parent_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            if Self::is_hash(&parent_hash.value)? {
                 commit_data.extend_from_slice(b"parent ");
-                commit_data.extend_from_slice(parent_hash.as_bytes());
+                commit_data.extend_from_slice(parent_hash.value.as_bytes());
                 commit_data.extend_from_slice(b"\n");
             }
         }
@@ -497,26 +508,74 @@ impl Repository {
         let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
 
         // Set HEAD to point to the new commit
-        self.set_ref(HEAD, &hash)?;
+        self.set_ref(
+            HEAD,
+            RefValue {
+                value: hash.clone(),
+                is_symbolic: false,
+            },
+            true,
+        )?;
 
         Ok(hash)
     }
 
-    pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
-        // Validate hash format
-        Self::validate_commit_hash(commit_hash)?;
+    pub fn set_ref(&self, ref_name: &str, ref_value: RefValue, deref: bool) -> Result<(), String> {
+        // Ability to set a symbolic ref
+        let new_value = if ref_value.is_symbolic {
+            // Set a symbolic ref
+            format!("ref: {}", ref_value.value)
+        } else {
+            // Set a direct ref
+            ref_value.value.clone()
+        };
 
-        let ref_path = format!("{}/{}", self.gitdir, ref_name);
-        fs::write(&ref_path, commit_hash)
+        // Try to get the actual reference, but if it doesn't exist, use the original name
+        let ref_path = match self.get_ref_internal(ref_name, deref) {
+            Ok((deref_name, _)) => format!("{}/{}", self.gitdir, deref_name),
+            Err(_) => format!("{}/{}", self.gitdir, ref_name),
+        };
+
+        fs::write(&ref_path, new_value)
             .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
         Ok(())
     }
 
-    pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
+    pub fn get_ref(&self, ref_name: &str, deref: bool) -> Result<RefValue, String> {
+        let (_, ref_value) = self.get_ref_internal(ref_name, deref)?;
+        Ok(ref_value)
+    }
+
+    pub fn get_ref_internal(
+        &self,
+        ref_name: &str,
+        deref: bool,
+    ) -> Result<(String, RefValue), String> {
+        // Get the ref path
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
-        fs::read_to_string(&ref_path)
-            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))
-            .map(|content| content.trim().to_string())
+
+        // Read the ref file
+        let content = fs::read_to_string(&ref_path)
+            .map_err(|e| format!("Failed to read {} file: {}", ref_name, e))?;
+
+        // Trim the content
+        let content = content.trim();
+
+        let is_symbolic = content.starts_with("ref:");
+
+        if is_symbolic && deref {
+            // Extract the target ref name and recursively resolve it
+            let target_ref = content.strip_prefix("ref:").unwrap().trim();
+            self.get_ref_internal(target_ref, deref)
+        } else {
+            Ok((
+                ref_name.to_string(),
+                RefValue {
+                    value: content.to_string(),
+                    is_symbolic,
+                },
+            ))
+        }
     }
 
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
@@ -572,18 +631,41 @@ impl Repository {
 
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
-        let head_hash = self.get_ref(HEAD)?;
+        let head_hash = self
+            .get_ref(HEAD, true)
+            .map_err(|e| format!("No commits found: {}", e))?;
 
-        if head_hash.contains("ref:") {
-            return Err("No commits found".to_string());
+        let current_hash = head_hash.value;
+
+        if current_hash.is_empty() {
+            return Ok(());
         }
 
-        let current_hash = Some(head_hash);
-
-        let commits = self.iter_commits_and_parents(vec![current_hash.clone().unwrap()])?;
+        let commits = self.iter_commits_and_parents(vec![current_hash])?;
 
         for hash in commits {
             let commit = self.get_commit(&hash)?;
+
+            // Get all refs pointing to this commit
+            let mut refs = Vec::new();
+
+            // Check branches
+            let branch_refs = self.iter_refs("refs/heads/")?;
+            for (name, ref_hash) in branch_refs {
+                if ref_hash == hash {
+                    let branch_name = name.split("/").last().unwrap();
+                    refs.push(format!("branch: {}", branch_name));
+                }
+            }
+
+            // Check tags
+            let tag_refs = self.iter_refs("refs/tags/")?;
+            for (name, ref_hash) in tag_refs {
+                if ref_hash == hash {
+                    let tag_name = name.split("/").last().unwrap();
+                    refs.push(format!("tag: {}", tag_name));
+                }
+            }
 
             // Print commit information
             println!();
@@ -593,6 +675,9 @@ impl Repository {
             }
             println!("tree {}", commit.tree);
             println!("Date:   {}", commit.timestamp);
+            if !refs.is_empty() {
+                println!("Refs:   {}", refs.join(", "));
+            }
             println!();
             println!("    {}", commit.message);
             println!();
@@ -601,9 +686,12 @@ impl Repository {
         Ok(())
     }
 
-    pub fn checkout(&self, commit_hash: &str) -> Result<(), String> {
+    pub fn checkout(&self, value: &str) -> Result<(), String> {
+        // Get oid hash
+        let commit_hash = Self::get_oid_hash(self, value)?;
+
         // Validate hash format
-        let commit_hash = Self::get_oid_hash(self, commit_hash)?;
+        Self::validate_commit_hash(&commit_hash)?;
 
         // Get the commit from the hash
         let commit = self
@@ -613,8 +701,26 @@ impl Repository {
         // Read the commit tree
         self.read_tree(&commit.tree, Path::new(&self.worktree))?;
 
-        // Set HEAD to point to the new commit
-        self.set_ref(HEAD, commit_hash.as_str())?;
+        // If the value is a branch, set the HEAD to the last commit of the branch
+        // else set the HEAD to the commit hash
+        let new_head = if self.is_branch(value)? {
+            format!("refs/heads/{}", value)
+        } else {
+            commit_hash.clone()
+        };
+
+        // If the value is a branch, the ref is symbolic, else it is direct
+        let new_is_symbolic = self.is_branch(value)?;
+
+        // Set the HEAD to the new head
+        self.set_ref(
+            HEAD,
+            RefValue {
+                value: new_head,
+                is_symbolic: new_is_symbolic,
+            },
+            false,
+        )?;
 
         Ok(())
     }
@@ -623,39 +729,48 @@ impl Repository {
         // Validate hash format
         Self::validate_commit_hash(commit_hash)?;
 
-        self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
+        self.set_ref(
+            format!("refs/tags/{}", tag_name).as_str(),
+            RefValue {
+                value: commit_hash.to_string(),
+                is_symbolic: false,
+            },
+            true,
+        )
     }
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
+        let mut value_to_search = value;
+
         if value == "@" {
-            return self.get_ref(HEAD);
+            value_to_search = "HEAD";
         }
 
         // First check if it's a direct hash
-        if Self::is_hash(value)? {
-            return Ok(value.to_string());
+        if Self::is_hash(value_to_search)? {
+            return Ok(value_to_search.to_string());
         }
 
         let refs_to_try = [
-            value.to_string(),
-            format!("refs/{}", value),
-            format!("refs/tags/{}", value),
-            format!("refs/heads/{}", value),
+            value_to_search.to_string(),
+            format!("refs/{}", value_to_search),
+            format!("refs/tags/{}", value_to_search),
+            format!("refs/heads/{}", value_to_search),
         ];
 
         for ref_to_try in refs_to_try {
-            match self.get_ref(ref_to_try.as_str()) {
+            match self.get_ref(ref_to_try.as_str(), true) {
                 Ok(ref_hash) => {
-                    return Ok(ref_hash);
+                    return Ok(ref_hash.value);
                 }
                 Err(_e) => continue,
             }
         }
 
-        Err(format!("Invalid hash format: {}", value))
+        Err(format!("Oid hash not found for: {}", value_to_search))
     }
 
-    pub fn iter_refs(&self) -> Result<Vec<(String, String)>, String> {
+    pub fn iter_refs(&self, prefix: &str) -> Result<Vec<(String, String)>, String> {
         let ref_folder = "refs";
         let refs_dir = format!("{}/{}", self.gitdir, ref_folder);
         let mut refs = Vec::new();
@@ -665,6 +780,7 @@ impl Repository {
             path: &Path,
             ref_folder: &str,
             refs: &mut Vec<(String, String)>,
+            prefix: &str,
         ) -> Result<(), String> {
             let files_to_ignore = [".DS_Store"];
 
@@ -674,6 +790,10 @@ impl Repository {
                 let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
                 let entry_path = entry.path();
 
+                if !format!("{}/", entry_path.to_string_lossy()).starts_with(prefix) {
+                    continue;
+                }
+
                 if files_to_ignore
                     .iter()
                     .any(|f| f == &entry_path.file_name().unwrap().to_string_lossy())
@@ -682,7 +802,7 @@ impl Repository {
                 }
 
                 if entry_path.is_dir() {
-                    collect_refs(&entry_path, ref_folder, refs)?;
+                    collect_refs(&entry_path, ref_folder, refs, prefix)?;
                 } else {
                     let content = fs::read_to_string(&entry_path).map_err(|e| {
                         format!(
@@ -707,7 +827,12 @@ impl Repository {
         }
 
         // Start collecting refs from the refs directory
-        collect_refs(Path::new(&refs_dir), ref_folder, &mut refs)?;
+        collect_refs(
+            Path::new(&refs_dir),
+            ref_folder,
+            &mut refs,
+            format!("{}/{}", self.gitdir, prefix).as_str(),
+        )?;
 
         Ok(refs)
     }
@@ -739,5 +864,79 @@ impl Repository {
         }
 
         Ok(result)
+    }
+
+    pub fn create_branch(
+        &self,
+        branch_name: &str,
+        commit_hash: Option<String>,
+    ) -> Result<(), String> {
+        let hash = match commit_hash {
+            Some(hash) => hash,
+            None => {
+                let (_, head_value) = self.get_ref_internal(HEAD, true)?;
+                head_value.value
+            }
+        };
+
+        self.set_ref(
+            format!("refs/heads/{}", branch_name).as_str(),
+            RefValue {
+                value: hash,
+                is_symbolic: false,
+            },
+            true,
+        )
+    }
+
+    pub fn is_branch(&self, value: &str) -> Result<bool, String> {
+        let ref_value: RefValue =
+            match self.get_ref(format!("refs/heads/{}", value).as_str(), false) {
+                Ok(value) => value,
+                Err(_) => RefValue {
+                    value: "".to_string(),
+                    is_symbolic: false,
+                },
+            };
+
+        if ref_value.value.is_empty() {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    pub fn get_branch_name(&self) -> Result<Option<String>, String> {
+        let head_ref: RefValue = self.get_ref(HEAD, false)?;
+
+        if !head_ref.is_symbolic {
+            Ok(None)
+        } else {
+            assert!(head_ref.value.starts_with("ref: refs/heads/"));
+            Ok(Some(head_ref.value[16..].to_string()))
+        }
+    }
+
+    pub fn iter_branch_names(&self) -> Result<Vec<String>, String> {
+        let refs = self.iter_refs("refs/heads/")?;
+        let current_branch = self.get_branch_name()?;
+
+        let branch_names = refs
+            .iter()
+            .map(|(name, _hash)| {
+                let branch_name = name.clone().split("/").last().unwrap().to_string();
+                if let Some(current) = &current_branch {
+                    if branch_name == *current {
+                        format!("\x1b[32m* {}\x1b[0m", branch_name)
+                    } else {
+                        branch_name
+                    }
+                } else {
+                    branch_name
+                }
+            })
+            .collect();
+
+        Ok(branch_names)
     }
 }

@@ -1,4 +1,4 @@
-use crate::repository::{GIT_DIR, HEAD, ObjectType, Repository};
+use crate::repository::{GIT_DIR, HEAD, ObjectType, RefValue, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -113,7 +113,7 @@ fn test_get_object_invalid_hash() {
     // Test with invalid hash format
     let result = repo.get_object("invalidhash");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
 
     // Test with non-existent hash
     let result = repo.get_object("a".repeat(40).as_str());
@@ -483,7 +483,7 @@ fn test_get_tree_data_invalid_hash() {
     // Test with invalid hash
     let result = repo.get_tree_data("invalidhash");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
 
     // Test with non-existent hash
     let result = repo.get_tree_data(&"a".repeat(40));
@@ -565,12 +565,27 @@ fn test_set_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Set HEAD manually
-    assert!(repo.set_ref(HEAD, &commit_hash).is_ok());
+    assert!(
+        repo.set_ref(
+            HEAD,
+            RefValue {
+                value: commit_hash.to_string(),
+                is_symbolic: false,
+            },
+            true,
+        )
+        .is_ok()
+    );
 
-    // Verify HEAD content
+    // Verify HEAD should be a symbolic ref to master
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     let head_content = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_content.trim(), commit_hash);
+    assert_eq!(head_content.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), commit_hash);
 }
 
 #[test]
@@ -586,13 +601,13 @@ fn test_get_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Get HEAD
-    let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, commit_hash);
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_hash.value, commit_hash);
 
     // Test getting HEAD when it doesn't exist
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     fs::remove_file(&head_path).unwrap();
-    assert!(repo.get_ref(HEAD).is_err());
+    assert!(repo.get_ref(HEAD, true).is_err());
 }
 
 #[test]
@@ -753,9 +768,9 @@ fn test_log_empty_repository() {
     let repo = Repository::new(repo_path);
     repo.init().unwrap();
 
-    // Log should fail when there are no commits
+    // Log should work on an empty repository
     let result = repo.log();
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -784,8 +799,8 @@ fn test_checkout_success() {
     assert!(repo.checkout(&first_hash).is_ok());
 
     // Verify HEAD points to first commit
-    let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, first_hash);
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_hash.value, first_hash);
 
     // Verify worktree is empty (first commit had no files)
     assert!(!test_dir.join("file1.txt").exists());
@@ -795,8 +810,8 @@ fn test_checkout_success() {
     assert!(repo.checkout(&second_hash).is_ok());
 
     // Verify HEAD points to second commit
-    let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, second_hash);
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_hash.value, second_hash);
 
     // Verify worktree has the files from second commit
     assert!(test_dir.join("file1.txt").exists());
@@ -823,8 +838,11 @@ fn test_checkout_invalid_hash() {
     let result = repo.checkout("not40chars");
     assert!(result.is_err());
     assert!(
-        result.as_ref().unwrap_err().contains("Invalid hash format"),
-        "Expected error message to contain 'Invalid hash format', but got: {}",
+        result
+            .as_ref()
+            .unwrap_err()
+            .contains("Oid hash not found for"),
+        "Expected error message to contain 'Oid hash not found for', but got: {}",
         result.unwrap_err()
     );
 
@@ -855,7 +873,12 @@ fn test_checkout_with_existing_files() {
     fs::write(test_dir.join("file3.txt"), "Another uncommitted file").unwrap();
 
     // Checkout the same commit (should work and preserve uncommitted files)
-    assert!(repo.checkout(&first_hash).is_ok());
+    let result = repo.checkout(&first_hash);
+    assert!(
+        result.is_ok(),
+        "Error checking out commit: {:?}",
+        result.err().unwrap()
+    );
 
     // Verify committed file exists with correct content
     assert!(test_dir.join("file1.txt").exists());
@@ -1022,8 +1045,11 @@ fn test_head_content_after_init() {
 
     // Verify log fails with appropriate error message
     let result = repo.log();
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("No commits found"));
+    assert!(
+        result.is_ok(),
+        "Log should work on an empty repository. Got error: {}",
+        result.unwrap_err()
+    );
 }
 
 #[test]
@@ -1042,10 +1068,15 @@ fn test_first_commit_handling() {
     let commit_message = "First commit";
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
-    // Verify HEAD now points to the commit hash
+    // Verify HEAD should be a symbolic ref to master
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     let head_content = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_content.trim(), commit_hash);
+    assert_eq!(head_content.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), commit_hash);
 
     // Verify commit has no parent
     let commit = repo.get_commit(&commit_hash).unwrap();
@@ -1074,17 +1105,26 @@ fn test_empty_to_committed_transition() {
     fs::write(&test_file, "Test content").unwrap();
     let first_commit_hash = repo.create_commit("First commit").unwrap();
 
-    // Verify HEAD now points to first commit
+    // Verify HEAD should be a symbolic ref to master
     let head_after_first = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_after_first.trim(), first_commit_hash);
+    assert_eq!(head_after_first.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), first_commit_hash);
 
     // Create second commit
     fs::write(&test_file, "Updated content").unwrap();
     let second_commit_hash = repo.create_commit("Second commit").unwrap();
 
-    // Verify HEAD now points to second commit
+    // Verify HEAD should be a symbolic ref to master
     let head_after_second = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_after_second.trim(), second_commit_hash);
+    assert_eq!(head_after_second.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the second commit
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), second_commit_hash);
 
     // Verify second commit has first commit as parent
     let second_commit = repo.get_commit(&second_commit_hash).unwrap();
@@ -1190,66 +1230,6 @@ fn test_create_tag_overwrite() {
 }
 
 #[test]
-fn test_hash_validation() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_path = temp_dir.path().to_str().unwrap();
-
-    let repo = Repository::new(repo_path);
-    repo.init().unwrap();
-
-    // Test get_object with invalid hash
-    let result = repo.get_object("invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test checkout with invalid hash
-    let result = repo.checkout("invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test create_tag with invalid hash
-    let result = repo.create_tag("v1.0.0", "invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test set_ref with invalid hash
-    let result = repo.set_ref("HEAD", "invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test with hash that's too short
-    let result = repo.get_object("123");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format: 123"));
-
-    // Test with hash that's too long
-    let result = repo.get_object(&"a".repeat(41));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
-
-    // Test with hash containing non-hex characters
-    let result = repo.get_object(&"g".repeat(40));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
-}
-
-#[test]
 fn test_get_oid_hash() {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path().to_str().unwrap();
@@ -1288,7 +1268,7 @@ fn test_get_oid_hash() {
     assert!(
         result
             .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
+            .contains("Oid hash not found for: invalidhash")
     );
 
     // Test with non-existent reference
@@ -1297,7 +1277,7 @@ fn test_get_oid_hash() {
     assert!(
         result
             .unwrap_err()
-            .contains("Invalid hash format: refs/heads/nonexistent")
+            .contains("Oid hash not found for: refs/heads/nonexistent")
     );
 
     // Test with reference to reference (HEAD -> refs/heads/master)
@@ -1331,4 +1311,306 @@ fn test_get_oid_hash_reference_chain() {
     let result = repo.get_oid_hash("refs/tags/feature-tag");
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), first_commit);
+}
+
+#[test]
+fn test_branch_creation() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+    // Create a new branch
+    repo.create_branch("feature", Some(commit_hash.clone()))
+        .unwrap();
+
+    // Verify branch exists and points to the correct commit
+    let (ref_name, ref_value) = repo.get_ref_internal("refs/heads/feature", true).unwrap();
+    assert_eq!(ref_name, "refs/heads/feature");
+    assert_eq!(ref_value.value, commit_hash);
+    assert!(!ref_value.is_symbolic);
+
+    // Create another branch without specifying commit (should use HEAD)
+    repo.create_branch("develop", None).unwrap();
+
+    // Verify new branch points to the same commit as HEAD
+    let (_, head_value) = repo.get_ref_internal("HEAD", true).unwrap();
+    let (_, develop_value) = repo.get_ref_internal("refs/heads/develop", true).unwrap();
+    assert_eq!(develop_value.value, head_value.value);
+}
+
+#[test]
+fn test_checkout() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create a file
+    let file_path = temp_dir.path().join("test.txt");
+    fs::write(&file_path, "initial content").unwrap();
+
+    // Create second commit
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Create a branch at the first commit
+    repo.create_branch("old_version", Some(first_commit.clone()))
+        .unwrap();
+
+    // Checkout the branch
+    repo.checkout("old_version").unwrap();
+
+    // Verify we're at the first commit
+    let (_, head_value) = repo.get_ref_internal("HEAD", true).unwrap();
+    assert_eq!(head_value.value, first_commit);
+
+    // Verify the file doesn't exist (was created after first commit)
+    assert!(!file_path.exists());
+
+    // Checkout back to the second commit
+    repo.checkout(&second_commit).unwrap();
+
+    // Verify we're at the second commit
+    let (_, head_value) = repo.get_ref_internal("HEAD", true).unwrap();
+    assert_eq!(head_value.value, second_commit);
+
+    // Verify the file exists again
+    assert!(file_path.exists());
+    assert_eq!(fs::read_to_string(&file_path).unwrap(), "initial content");
+
+    // Test checkout to non-existent branch
+    assert!(repo.checkout("non-existent").is_err());
+
+    // Test checkout to invalid commit hash
+    assert!(repo.checkout("invalid-hash").is_err());
+}
+
+#[test]
+fn test_master_branch_creation_and_updates() {
+    // Create a temporary directory for the test
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+
+    // Initialize the repository
+    assert!(repo.init().is_ok());
+
+    // Check that HEAD points to master
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+
+    // Check that master branch exists but is empty
+    let master_ref = repo.get_ref("refs/heads/master", false);
+    assert!(master_ref.is_ok());
+    assert!(master_ref.unwrap().value.is_empty());
+
+    // Create a test file and commit it
+    let test_file_path = format!("{}/test.txt", repo_path);
+    fs::write(&test_file_path, "test content").unwrap();
+
+    // Create a commit
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+    // Check that HEAD still points to master
+    let head_ref: RefValue = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+
+    // Check that master branch now points to the commit
+    let master_ref = repo.get_ref("refs/heads/master", false).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, commit_hash);
+
+    // Clean up
+    temp_dir.close().unwrap();
+}
+
+#[test]
+fn test_master_branch_dereferencing() {
+    // Create a temporary directory for the test
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+
+    // Initialize the repository
+    assert!(repo.init().is_ok());
+
+    // Create a test file and commit it
+    let test_file_path = format!("{}/test.txt", repo_path);
+    fs::write(&test_file_path, "test content").unwrap();
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+    // Check that HEAD dereferences to the commit hash
+    let head_ref = repo.get_ref("HEAD", true).unwrap();
+    assert!(!head_ref.is_symbolic);
+    assert_eq!(head_ref.value, commit_hash);
+
+    // Check that master branch points to the commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, commit_hash);
+
+    // Clean up
+    temp_dir.close().unwrap();
+}
+
+#[test]
+fn test_detached_head_and_branch_creation() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Checkout the first commit (detached HEAD)
+    assert!(repo.checkout(&first_commit).is_ok());
+
+    // Verify HEAD is detached (points directly to commit hash)
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(!head_ref.is_symbolic);
+    assert_eq!(head_ref.value, first_commit);
+
+    // Verify that branch master points to the last commit
+    let master_ref = repo.get_ref("refs/heads/master", false).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, second_commit);
+
+    // Create a new branch from the first commit
+    let new_branch_name = "feature-branch";
+    assert!(
+        repo.create_branch(new_branch_name, Some(first_commit.clone()))
+            .is_ok()
+    );
+
+    // Checkout the new branch
+    assert!(repo.checkout(new_branch_name).is_ok());
+
+    // Verify HEAD is now on the new branch
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(
+        head_ref.value,
+        format!("ref: refs/heads/{}", new_branch_name)
+    );
+
+    // Verify the branch points to the first commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", new_branch_name), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, first_commit);
+}
+
+#[test]
+fn test_get_branch_name() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Initially HEAD points to master
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some("master".to_string()));
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Now HEAD should point to master
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some("master".to_string()));
+
+    // Create a new branch and checkout to it
+    let new_branch = "feature-branch";
+    assert!(
+        repo.create_branch(new_branch, Some(first_commit.clone()))
+            .is_ok()
+    );
+    assert!(repo.checkout(new_branch).is_ok());
+
+    // Now HEAD should point to the new branch
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some(new_branch.to_string()));
+
+    // Checkout to a commit hash (detached HEAD)
+    assert!(repo.checkout(&first_commit).is_ok());
+    let branch_name = repo.get_branch_name().unwrap();
+    assert!(branch_name.is_none());
+}
+
+#[test]
+fn test_iter_branch_names() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Initially only master exists
+    let branch_names = repo.iter_branch_names().unwrap();
+    assert_eq!(branch_names, vec!["\x1b[32m* master\x1b[0m"]);
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create multiple branches
+    let branches = vec!["feature-1", "feature-2", "develop"];
+    for branch in &branches {
+        assert!(
+            repo.create_branch(branch, Some(first_commit.clone()))
+                .is_ok()
+        );
+    }
+
+    // Get all branch names (should include master and new branches)
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort(); // Sort for consistent testing
+
+    let mut expected = vec!["\x1b[32m* master\x1b[0m"];
+    expected.extend(branches);
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
+
+    // Checkout to feature-1 and verify it's marked with *
+    assert!(repo.checkout("feature-1").is_ok());
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort();
+
+    let mut expected = vec![
+        "\x1b[32m* feature-1\x1b[0m",
+        "develop",
+        "feature-2",
+        "master",
+    ];
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
+
+    // Checkout to a commit hash (detached HEAD) and verify no branch is marked with *
+    assert!(repo.checkout(&first_commit).is_ok());
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort();
+
+    let mut expected = vec!["develop", "feature-1", "feature-2", "master"];
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
 }

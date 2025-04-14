@@ -105,19 +105,50 @@ fn main() {
             }
         },
         Command::Visualize => match Visualizer::new(repo).visualize() {
-            Ok(output) => println!("{}", output),
+            Ok(_output) => (),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         },
-        Command::IterRefs => match repo.iter_refs() {
+        Command::IterRefs => match repo.iter_refs("") {
             Ok(output) => println!("{:?}", output),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         },
+        Command::Branch(branch_name) => {
+            if let Some(branch_name) = branch_name {
+                match repo.create_branch(&branch_name, None) {
+                    Ok(_) => println!("Branch {} created successfully", branch_name),
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                match repo.iter_branch_names() {
+                    Ok(names) => names.iter().for_each(|name| {
+                        println!("{}", name);
+                    }),
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+        Command::Status => {
+            let head = repo.get_oid_hash("@").unwrap();
+            let branch = repo.get_branch_name().unwrap();
+
+            if branch.is_none() {
+                println!("HEAD detached at {}", head);
+            } else {
+                println!("On branch {}", branch.unwrap());
+            }
+        }
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);
