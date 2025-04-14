@@ -1563,7 +1563,7 @@ fn test_iter_branch_names() {
 
     // Initially only master exists
     let branch_names = repo.iter_branch_names().unwrap();
-    assert_eq!(branch_names, vec!["* master"]);
+    assert_eq!(branch_names, vec!["\x1b[32m* master\x1b[0m"]);
 
     // Create initial commit
     let test_file = temp_dir.path().join("test.txt");
@@ -1583,7 +1583,7 @@ fn test_iter_branch_names() {
     let mut branch_names = repo.iter_branch_names().unwrap();
     branch_names.sort(); // Sort for consistent testing
 
-    let mut expected = vec!["* master"];
+    let mut expected = vec!["\x1b[32m* master\x1b[0m"];
     expected.extend(branches);
     expected.sort();
 
@@ -1594,7 +1594,12 @@ fn test_iter_branch_names() {
     let mut branch_names = repo.iter_branch_names().unwrap();
     branch_names.sort();
 
-    let mut expected = vec!["* feature-1", "develop", "feature-2", "master"];
+    let mut expected = vec![
+        "\x1b[32m* feature-1\x1b[0m",
+        "develop",
+        "feature-2",
+        "master",
+    ];
     expected.sort();
 
     assert_eq!(branch_names, expected);

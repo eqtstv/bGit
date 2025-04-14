@@ -903,7 +903,7 @@ impl Repository {
                 let branch_name = name.clone().split("/").last().unwrap().to_string();
                 if let Some(current) = &current_branch {
                     if branch_name == *current {
-                        format!("* {}", branch_name)
+                        format!("\x1b[32m* {}\x1b[0m", branch_name)
                     } else {
                         branch_name
                     }
