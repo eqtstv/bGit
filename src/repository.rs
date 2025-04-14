@@ -646,6 +646,27 @@ impl Repository {
         for hash in commits {
             let commit = self.get_commit(&hash)?;
 
+            // Get all refs pointing to this commit
+            let mut refs = Vec::new();
+
+            // Check branches
+            let branch_refs = self.iter_refs("refs/heads/")?;
+            for (name, ref_hash) in branch_refs {
+                if ref_hash == hash {
+                    let branch_name = name.split("/").last().unwrap();
+                    refs.push(format!("branch: {}", branch_name));
+                }
+            }
+
+            // Check tags
+            let tag_refs = self.iter_refs("refs/tags/")?;
+            for (name, ref_hash) in tag_refs {
+                if ref_hash == hash {
+                    let tag_name = name.split("/").last().unwrap();
+                    refs.push(format!("tag: {}", tag_name));
+                }
+            }
+
             // Print commit information
             println!();
             println!("\x1b[33mcommit {}\x1b[0m", hash);
@@ -654,6 +675,9 @@ impl Repository {
             }
             println!("tree {}", commit.tree);
             println!("Date:   {}", commit.timestamp);
+            if !refs.is_empty() {
+                println!("Refs:   {}", refs.join(", "));
+            }
             println!();
             println!("    {}", commit.message);
             println!();
