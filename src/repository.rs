@@ -797,22 +797,12 @@ impl Repository {
         branch_name: &str,
         commit_hash: Option<String>,
     ) -> Result<(), String> {
-        if let Some(commit_hash) = commit_hash {
-            self.set_ref(
-                format!("refs/heads/{}", branch_name).as_str(),
-                RefValue {
-                    value: commit_hash.clone(),
-                    is_symbolic: false,
-                },
-            )
-        } else {
-            self.set_ref(
-                format!("refs/heads/{}", branch_name).as_str(),
-                RefValue {
-                    value: "@".to_string(),
-                    is_symbolic: false,
-                },
-            )
-        }
+        self.set_ref(
+            format!("refs/heads/{}", branch_name).as_str(),
+            RefValue {
+                value: commit_hash.unwrap_or("@".to_string()),
+                is_symbolic: false,
+            },
+        )
     }
 }
