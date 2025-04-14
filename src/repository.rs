@@ -695,7 +695,7 @@ impl Repository {
                 value: new_head,
                 is_symbolic: new_is_symbolic,
             },
-            true,
+            false,
         )?;
 
         Ok(())

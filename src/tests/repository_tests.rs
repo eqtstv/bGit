@@ -1458,3 +1458,58 @@ fn test_master_branch_dereferencing() {
     // Clean up
     temp_dir.close().unwrap();
 }
+
+#[test]
+fn test_detached_head_and_branch_creation() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Checkout the first commit (detached HEAD)
+    assert!(repo.checkout(&first_commit).is_ok());
+
+    // Verify HEAD is detached (points directly to commit hash)
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(!head_ref.is_symbolic);
+    assert_eq!(head_ref.value, first_commit);
+
+    // Verify that branch master points to the last commit
+    let master_ref = repo.get_ref("refs/heads/master", false).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, second_commit);
+
+    // Create a new branch from the first commit
+    let new_branch_name = "feature-branch";
+    assert!(
+        repo.create_branch(new_branch_name, Some(first_commit.clone()))
+            .is_ok()
+    );
+
+    // Checkout the new branch
+    assert!(repo.checkout(new_branch_name).is_ok());
+
+    // Verify HEAD is now on the new branch
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(
+        head_ref.value,
+        format!("ref: refs/heads/{}", new_branch_name)
+    );
+
+    // Verify the branch points to the first commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", new_branch_name), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, first_commit);
+}
