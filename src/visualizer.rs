@@ -76,7 +76,7 @@ impl Visualizer {
             let node_id = format!("\"{}\"", commit_hash);
 
             // Style HEAD commit differently
-            let is_head = commit_hash == &head_hash;
+            let is_head = commit_hash == &head_hash.value;
             let node_style = if is_head {
                 node!(node_id;
                     attr!("label", label),

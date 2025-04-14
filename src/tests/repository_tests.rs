@@ -1,4 +1,4 @@
-use crate::repository::{GIT_DIR, HEAD, ObjectType, Repository};
+use crate::repository::{GIT_DIR, HEAD, ObjectType, RefValue, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -565,7 +565,16 @@ fn test_set_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Set HEAD manually
-    assert!(repo.set_ref(HEAD, &commit_hash).is_ok());
+    assert!(
+        repo.set_ref(
+            RefValue {
+                value: HEAD.to_string(),
+                is_symbolic: false,
+            },
+            &commit_hash,
+        )
+        .is_ok()
+    );
 
     // Verify HEAD content
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
@@ -587,7 +596,7 @@ fn test_get_head() {
 
     // Get HEAD
     let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, commit_hash);
+    assert_eq!(head_hash.value, commit_hash);
 
     // Test getting HEAD when it doesn't exist
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
@@ -785,7 +794,7 @@ fn test_checkout_success() {
 
     // Verify HEAD points to first commit
     let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, first_hash);
+    assert_eq!(head_hash.value, first_hash);
 
     // Verify worktree is empty (first commit had no files)
     assert!(!test_dir.join("file1.txt").exists());
@@ -796,7 +805,7 @@ fn test_checkout_success() {
 
     // Verify HEAD points to second commit
     let head_hash = repo.get_ref(HEAD).unwrap();
-    assert_eq!(head_hash, second_hash);
+    assert_eq!(head_hash.value, second_hash);
 
     // Verify worktree has the files from second commit
     assert!(test_dir.join("file1.txt").exists());
@@ -1229,7 +1238,13 @@ fn test_hash_validation() {
     );
 
     // Test set_ref with invalid hash
-    let result = repo.set_ref("HEAD", "invalidhash");
+    let result = repo.set_ref(
+        RefValue {
+            value: HEAD.to_string(),
+            is_symbolic: false,
+        },
+        "invalidhash",
+    );
     assert!(result.is_err());
     assert!(
         result

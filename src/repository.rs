@@ -14,6 +14,12 @@ pub enum ObjectType {
 }
 
 #[derive(Debug)]
+pub struct RefValue {
+    pub value: String,
+    pub is_symbolic: bool,
+}
+
+#[derive(Debug)]
 pub struct Commit {
     pub _oid: String,
     pub tree: String,
@@ -474,9 +480,9 @@ impl Repository {
         // Add parent commit if HEAD exists and contains a valid commit hash
         if let Ok(parent_hash) = self.get_ref(HEAD) {
             // Only add parent if it's a valid commit hash (40 hex characters)
-            if parent_hash.len() == 40 && parent_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            if Self::is_hash(&parent_hash.value)? {
                 commit_data.extend_from_slice(b"parent ");
-                commit_data.extend_from_slice(parent_hash.as_bytes());
+                commit_data.extend_from_slice(parent_hash.value.as_bytes());
                 commit_data.extend_from_slice(b"\n");
             }
         }
@@ -497,22 +503,29 @@ impl Repository {
         let hash = self.hash_object(&commit_data, ObjectType::Commit)?;
 
         // Set HEAD to point to the new commit
-        self.set_ref(HEAD, &hash)?;
+        self.set_ref(
+            RefValue {
+                value: HEAD.to_string(),
+                is_symbolic: false,
+            },
+            &hash,
+        )?;
 
         Ok(hash)
     }
 
-    pub fn set_ref(&self, ref_name: &str, commit_hash: &str) -> Result<(), String> {
+    pub fn set_ref(&self, ref_value: RefValue, commit_hash: &str) -> Result<(), String> {
+        assert!(!ref_value.is_symbolic);
         // Validate hash format
         Self::validate_commit_hash(commit_hash)?;
 
-        let ref_path = format!("{}/{}", self.gitdir, ref_name);
+        let ref_path = format!("{}/{}", self.gitdir, ref_value.value);
         fs::write(&ref_path, commit_hash)
-            .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
+            .map_err(|e| format!("Failed to update {} file: {}", ref_value.value, e))?;
         Ok(())
     }
 
-    pub fn get_ref(&self, ref_name: &str) -> Result<String, String> {
+    pub fn get_ref(&self, ref_name: &str) -> Result<RefValue, String> {
         // Get the ref path
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
 
@@ -528,7 +541,10 @@ impl Repository {
             let target_ref = content.strip_prefix("ref:").unwrap().trim();
             self.get_ref(target_ref)
         } else {
-            Ok(content.to_string())
+            Ok(RefValue {
+                value: content.to_string(),
+                is_symbolic: false,
+            })
         }
     }
 
@@ -589,7 +605,7 @@ impl Repository {
             .get_ref(HEAD)
             .map_err(|e| format!("No commits found: {}", e))?;
 
-        let current_hash = Some(head_hash);
+        let current_hash = Some(head_hash.value);
 
         let commits = self.iter_commits_and_parents(vec![current_hash.clone().unwrap()])?;
 
@@ -625,7 +641,13 @@ impl Repository {
         self.read_tree(&commit.tree, Path::new(&self.worktree))?;
 
         // Set HEAD to point to the new commit
-        self.set_ref(HEAD, commit_hash.as_str())?;
+        self.set_ref(
+            RefValue {
+                value: HEAD.to_string(),
+                is_symbolic: false,
+            },
+            commit_hash.as_str(),
+        )?;
 
         Ok(())
     }
@@ -634,12 +656,18 @@ impl Repository {
         // Validate hash format
         Self::validate_commit_hash(commit_hash)?;
 
-        self.set_ref(&format!("refs/tags/{}", tag_name), commit_hash)
+        self.set_ref(
+            RefValue {
+                value: format!("refs/tags/{}", tag_name),
+                is_symbolic: false,
+            },
+            commit_hash,
+        )
     }
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
         if value == "@" {
-            return self.get_ref(HEAD);
+            return self.get_ref(HEAD).map(|ref_value| ref_value.value);
         }
 
         // First check if it's a direct hash
@@ -657,7 +685,7 @@ impl Repository {
         for ref_to_try in refs_to_try {
             match self.get_ref(ref_to_try.as_str()) {
                 Ok(ref_hash) => {
-                    return Ok(ref_hash);
+                    return Ok(ref_hash.value);
                 }
                 Err(_e) => continue,
             }
@@ -758,9 +786,21 @@ impl Repository {
         commit_hash: Option<String>,
     ) -> Result<(), String> {
         if let Some(commit_hash) = commit_hash {
-            self.set_ref(&format!("refs/heads/{}", branch_name), &commit_hash)
+            self.set_ref(
+                RefValue {
+                    value: format!("refs/heads/{}", branch_name),
+                    is_symbolic: false,
+                },
+                &commit_hash,
+            )
         } else {
-            self.set_ref(&format!("refs/heads/{}", branch_name), "@")
+            self.set_ref(
+                RefValue {
+                    value: format!("refs/heads/{}", branch_name),
+                    is_symbolic: false,
+                },
+                "@",
+            )
         }
     }
 }
