@@ -526,6 +526,11 @@ impl Repository {
     }
 
     pub fn get_ref(&self, ref_name: &str) -> Result<RefValue, String> {
+        let (_, ref_value) = self.get_ref_internal(ref_name)?;
+        Ok(ref_value)
+    }
+
+    pub fn get_ref_internal(&self, ref_name: &str) -> Result<(String, RefValue), String> {
         // Get the ref path
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
 
@@ -536,15 +541,20 @@ impl Repository {
         // Trim the content
         let content = content.trim();
 
-        if content.starts_with("ref:") {
+        let is_symbolic = content.starts_with("ref:");
+
+        if is_symbolic {
             // Extract the target ref name and recursively resolve it
             let target_ref = content.strip_prefix("ref:").unwrap().trim();
-            self.get_ref(target_ref)
+            self.get_ref_internal(target_ref)
         } else {
-            Ok(RefValue {
-                value: content.to_string(),
-                is_symbolic: false,
-            })
+            Ok((
+                ref_name.to_string(),
+                RefValue {
+                    value: content.to_string(),
+                    is_symbolic: false,
+                },
+            ))
         }
     }
 
