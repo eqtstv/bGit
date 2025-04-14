@@ -29,7 +29,7 @@ impl Visualizer {
         graph.add_stmt(Stmt::Attribute(attr!("splines", "ortho")));
 
         // Get current HEAD
-        let head_hash = self.repo.get_ref("HEAD")?;
+        let head_hash = self.repo.get_ref("HEAD", true)?;
 
         let refs = self.repo.iter_refs()?;
         let commits = self

@@ -478,7 +478,7 @@ impl Repository {
         commit_data.extend_from_slice(b"\n");
 
         // Add parent commit if HEAD exists and contains a valid commit hash
-        if let Ok(parent_hash) = self.get_ref(HEAD) {
+        if let Ok(parent_hash) = self.get_ref(HEAD, true) {
             // Only add parent if it's a valid commit hash (40 hex characters)
             if Self::is_hash(&parent_hash.value)? {
                 commit_data.extend_from_slice(b"parent ");
@@ -509,30 +509,43 @@ impl Repository {
                 value: hash.clone(),
                 is_symbolic: false,
             },
+            true,
         )?;
 
         Ok(hash)
     }
 
-    pub fn set_ref(&self, ref_name: &str, ref_value: RefValue) -> Result<(), String> {
-        // Validate hash format
-        Self::validate_commit_hash(&ref_value.value)?;
+    pub fn set_ref(&self, ref_name: &str, ref_value: RefValue, deref: bool) -> Result<(), String> {
+        // Ability to set a symbolic ref
+        let new_value = if ref_value.is_symbolic {
+            // Set a symbolic ref
+            format!("ref: {}", ref_value.value)
+        } else {
+            // Set a direct ref
+            ref_value.value.clone()
+        };
 
-        assert!(!ref_value.is_symbolic);
+        // Try to get the actual reference, but if it doesn't exist, use the original name
+        let ref_path = match self.get_ref_internal(ref_name, deref) {
+            Ok((deref_name, _)) => format!("{}/{}", self.gitdir, deref_name),
+            Err(_) => format!("{}/{}", self.gitdir, ref_name),
+        };
 
-        let ref_path = format!("{}/{}", self.gitdir, ref_name);
-
-        fs::write(&ref_path, ref_value.value)
+        fs::write(&ref_path, new_value)
             .map_err(|e| format!("Failed to update {} file: {}", ref_name, e))?;
         Ok(())
     }
 
-    pub fn get_ref(&self, ref_name: &str) -> Result<RefValue, String> {
-        let (_, ref_value) = self.get_ref_internal(ref_name)?;
+    pub fn get_ref(&self, ref_name: &str, deref: bool) -> Result<RefValue, String> {
+        let (_, ref_value) = self.get_ref_internal(ref_name, deref)?;
         Ok(ref_value)
     }
 
-    pub fn get_ref_internal(&self, ref_name: &str) -> Result<(String, RefValue), String> {
+    pub fn get_ref_internal(
+        &self,
+        ref_name: &str,
+        deref: bool,
+    ) -> Result<(String, RefValue), String> {
         // Get the ref path
         let ref_path = format!("{}/{}", self.gitdir, ref_name);
 
@@ -548,13 +561,23 @@ impl Repository {
         if is_symbolic {
             // Extract the target ref name and recursively resolve it
             let target_ref = content.strip_prefix("ref:").unwrap().trim();
-            self.get_ref_internal(target_ref)
+            if deref {
+                self.get_ref_internal(target_ref, deref)
+            } else {
+                Ok((
+                    ref_name.to_string(),
+                    RefValue {
+                        value: content.to_string(),
+                        is_symbolic,
+                    },
+                ))
+            }
         } else {
             Ok((
                 ref_name.to_string(),
                 RefValue {
                     value: content.to_string(),
-                    is_symbolic: false,
+                    is_symbolic,
                 },
             ))
         }
@@ -614,7 +637,7 @@ impl Repository {
     pub fn log(&self) -> Result<(), String> {
         // Get the current HEAD commit
         let head_hash = self
-            .get_ref(HEAD)
+            .get_ref(HEAD, true)
             .map_err(|e| format!("No commits found: {}", e))?;
 
         let current_hash = Some(head_hash.value);
@@ -659,6 +682,7 @@ impl Repository {
                 value: commit_hash.clone(),
                 is_symbolic: false,
             },
+            true,
         )?;
 
         Ok(())
@@ -674,12 +698,13 @@ impl Repository {
                 value: commit_hash.to_string(),
                 is_symbolic: false,
             },
+            true,
         )
     }
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
         if value == "@" {
-            return self.get_ref(HEAD).map(|ref_value| ref_value.value);
+            return self.get_ref(HEAD, true).map(|ref_value| ref_value.value);
         }
 
         // First check if it's a direct hash
@@ -695,7 +720,7 @@ impl Repository {
         ];
 
         for ref_to_try in refs_to_try {
-            match self.get_ref(ref_to_try.as_str()) {
+            match self.get_ref(ref_to_try.as_str(), true) {
                 Ok(ref_hash) => {
                     return Ok(ref_hash.value);
                 }
@@ -803,6 +828,7 @@ impl Repository {
                 value: commit_hash.unwrap_or("@".to_string()),
                 is_symbolic: false,
             },
+            true,
         )
     }
 }

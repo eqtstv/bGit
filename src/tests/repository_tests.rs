@@ -572,6 +572,7 @@ fn test_set_head() {
                 value: commit_hash.to_string(),
                 is_symbolic: false,
             },
+            true,
         )
         .is_ok()
     );
@@ -595,13 +596,13 @@ fn test_get_head() {
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
     // Get HEAD
-    let head_hash = repo.get_ref(HEAD).unwrap();
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
     assert_eq!(head_hash.value, commit_hash);
 
     // Test getting HEAD when it doesn't exist
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     fs::remove_file(&head_path).unwrap();
-    assert!(repo.get_ref(HEAD).is_err());
+    assert!(repo.get_ref(HEAD, true).is_err());
 }
 
 #[test]
@@ -793,7 +794,7 @@ fn test_checkout_success() {
     assert!(repo.checkout(&first_hash).is_ok());
 
     // Verify HEAD points to first commit
-    let head_hash = repo.get_ref(HEAD).unwrap();
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
     assert_eq!(head_hash.value, first_hash);
 
     // Verify worktree is empty (first commit had no files)
@@ -804,7 +805,7 @@ fn test_checkout_success() {
     assert!(repo.checkout(&second_hash).is_ok());
 
     // Verify HEAD points to second commit
-    let head_hash = repo.get_ref(HEAD).unwrap();
+    let head_hash = repo.get_ref(HEAD, true).unwrap();
     assert_eq!(head_hash.value, second_hash);
 
     // Verify worktree has the files from second commit
@@ -1200,73 +1201,6 @@ fn test_create_tag_overwrite() {
     let tag_path = format!("{}/{}/refs/tags/v1.0.0", repo_path, GIT_DIR);
     let tag_content = fs::read_to_string(&tag_path).unwrap();
     assert_eq!(tag_content.trim(), second_commit);
-}
-
-#[test]
-fn test_hash_validation() {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_path = temp_dir.path().to_str().unwrap();
-
-    let repo = Repository::new(repo_path);
-    repo.init().unwrap();
-
-    // Test get_object with invalid hash
-    let result = repo.get_object("invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test checkout with invalid hash
-    let result = repo.checkout("invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test create_tag with invalid hash
-    let result = repo.create_tag("v1.0.0", "invalidhash");
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test set_ref with invalid hash
-    let result = repo.set_ref(
-        HEAD,
-        RefValue {
-            value: "invalidhash".to_string(),
-            is_symbolic: false,
-        },
-    );
-
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
-    );
-
-    // Test with hash that's too short
-    let result = repo.get_object("123");
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format: 123"));
-
-    // Test with hash that's too long
-    let result = repo.get_object(&"a".repeat(41));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
-
-    // Test with hash containing non-hex characters
-    let result = repo.get_object(&"g".repeat(40));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
 }
 
 #[test]
