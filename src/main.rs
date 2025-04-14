@@ -125,6 +125,16 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Status => {
+            let head = repo.get_oid_hash("@").unwrap();
+            let branch = repo.get_branch_name().unwrap();
+
+            if branch.is_none() {
+                println!("HEAD detached at {}", head);
+            } else {
+                println!("On branch {}", branch.unwrap());
+            }
+        }
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

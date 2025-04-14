@@ -113,7 +113,7 @@ fn test_get_object_invalid_hash() {
     // Test with invalid hash format
     let result = repo.get_object("invalidhash");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
 
     // Test with non-existent hash
     let result = repo.get_object("a".repeat(40).as_str());
@@ -483,7 +483,7 @@ fn test_get_tree_data_invalid_hash() {
     // Test with invalid hash
     let result = repo.get_tree_data("invalidhash");
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid hash format"));
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
 
     // Test with non-existent hash
     let result = repo.get_tree_data(&"a".repeat(40));
@@ -577,10 +577,15 @@ fn test_set_head() {
         .is_ok()
     );
 
-    // Verify HEAD content
+    // Verify HEAD should be a symbolic ref to master
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     let head_content = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_content.trim(), commit_hash);
+    assert_eq!(head_content.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), commit_hash);
 }
 
 #[test]
@@ -763,9 +768,9 @@ fn test_log_empty_repository() {
     let repo = Repository::new(repo_path);
     repo.init().unwrap();
 
-    // Log should fail when there are no commits
+    // Log should work on an empty repository
     let result = repo.log();
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -833,8 +838,11 @@ fn test_checkout_invalid_hash() {
     let result = repo.checkout("not40chars");
     assert!(result.is_err());
     assert!(
-        result.as_ref().unwrap_err().contains("Invalid hash format"),
-        "Expected error message to contain 'Invalid hash format', but got: {}",
+        result
+            .as_ref()
+            .unwrap_err()
+            .contains("Oid hash not found for"),
+        "Expected error message to contain 'Oid hash not found for', but got: {}",
         result.unwrap_err()
     );
 
@@ -1037,10 +1045,9 @@ fn test_head_content_after_init() {
 
     // Verify log fails with appropriate error message
     let result = repo.log();
-    assert!(result.is_err());
     assert!(
-        result.as_ref().unwrap_err().contains("No commits found"),
-        "Expected error message to contain 'No commits found', but got: {}",
+        result.is_ok(),
+        "Log should work on an empty repository. Got error: {}",
         result.unwrap_err()
     );
 }
@@ -1061,10 +1068,15 @@ fn test_first_commit_handling() {
     let commit_message = "First commit";
     let commit_hash = repo.create_commit(commit_message).unwrap();
 
-    // Verify HEAD now points to the commit hash
+    // Verify HEAD should be a symbolic ref to master
     let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
     let head_content = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_content.trim(), commit_hash);
+    assert_eq!(head_content.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), commit_hash);
 
     // Verify commit has no parent
     let commit = repo.get_commit(&commit_hash).unwrap();
@@ -1093,17 +1105,26 @@ fn test_empty_to_committed_transition() {
     fs::write(&test_file, "Test content").unwrap();
     let first_commit_hash = repo.create_commit("First commit").unwrap();
 
-    // Verify HEAD now points to first commit
+    // Verify HEAD should be a symbolic ref to master
     let head_after_first = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_after_first.trim(), first_commit_hash);
+    assert_eq!(head_after_first.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the commit
+    let master_path = format!("{}/{}/refs/heads/master", repo_path, GIT_DIR);
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), first_commit_hash);
 
     // Create second commit
     fs::write(&test_file, "Updated content").unwrap();
     let second_commit_hash = repo.create_commit("Second commit").unwrap();
 
-    // Verify HEAD now points to second commit
+    // Verify HEAD should be a symbolic ref to master
     let head_after_second = fs::read_to_string(&head_path).unwrap();
-    assert_eq!(head_after_second.trim(), second_commit_hash);
+    assert_eq!(head_after_second.trim(), "ref: refs/heads/master");
+
+    // Verify master branch points to the second commit
+    let master_content = fs::read_to_string(&master_path).unwrap();
+    assert_eq!(master_content.trim(), second_commit_hash);
 
     // Verify second commit has first commit as parent
     let second_commit = repo.get_commit(&second_commit_hash).unwrap();
@@ -1247,7 +1268,7 @@ fn test_get_oid_hash() {
     assert!(
         result
             .unwrap_err()
-            .contains("Invalid hash format: invalidhash")
+            .contains("Oid hash not found for: invalidhash")
     );
 
     // Test with non-existent reference
@@ -1256,7 +1277,7 @@ fn test_get_oid_hash() {
     assert!(
         result
             .unwrap_err()
-            .contains("Invalid hash format: refs/heads/nonexistent")
+            .contains("Oid hash not found for: refs/heads/nonexistent")
     );
 
     // Test with reference to reference (HEAD -> refs/heads/master)
@@ -1291,47 +1312,6 @@ fn test_get_oid_hash_reference_chain() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), first_commit);
 }
-
-// #[test]
-// fn test_symbolic_refs() {
-//     let temp_dir = TempDir::new().unwrap();
-//     let repo = Repository::new(temp_dir.path().to_str().unwrap());
-//     repo.init().unwrap();
-
-//     // Test setting and getting symbolic HEAD
-//     let head_ref = RefValue {
-//         value: "refs/heads/master".to_string(),
-//         is_symbolic: true,
-//     };
-//     repo.set_ref("HEAD", head_ref, true).unwrap();
-
-//     let (ref_name, ref_value) = repo.get_ref_internal("HEAD", true).unwrap();
-//     assert_eq!(ref_name, "HEAD");
-//     assert_eq!(ref_value.value, "refs/heads/master");
-//     assert!(ref_value.is_symbolic);
-
-//     // Test setting and getting a branch
-//     let branch_ref = RefValue {
-//         value: "1234567890123456789012345678901234567890".to_string(),
-//         is_symbolic: false,
-//     };
-//     let branch_ref_clone = RefValue {
-//         value: branch_ref.value.clone(),
-//         is_symbolic: branch_ref.is_symbolic,
-//     };
-//     repo.set_ref("refs/heads/master", branch_ref, true).unwrap();
-
-//     let (ref_name, ref_value) = repo.get_ref_internal("refs/heads/master", true).unwrap();
-//     assert_eq!(ref_name, "refs/heads/master");
-//     assert_eq!(ref_value.value, branch_ref_clone.value);
-//     assert!(!ref_value.is_symbolic);
-
-//     // Test getting HEAD should resolve to the branch value
-//     let (ref_name, ref_value) = repo.get_ref_internal("HEAD", true).unwrap();
-//     assert_eq!(ref_name, "refs/heads/master");
-//     assert_eq!(ref_value.value, branch_ref_clone.value);
-//     assert!(!ref_value.is_symbolic);
-// }
 
 #[test]
 fn test_branch_creation() {
@@ -1408,3 +1388,73 @@ fn test_checkout() {
     // Test checkout to invalid commit hash
     assert!(repo.checkout("invalid-hash").is_err());
 }
+
+#[test]
+fn test_master_branch_creation_and_updates() {
+    // Create a temporary directory for the test
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+
+    // Initialize the repository
+    assert!(repo.init().is_ok());
+
+    // Check that HEAD points to master
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+
+    // Check that master branch exists but is empty
+    let master_ref = repo.get_ref("refs/heads/master", false);
+    assert!(master_ref.is_ok());
+    assert!(master_ref.unwrap().value.is_empty());
+
+    // Create a test file and commit it
+    let test_file_path = format!("{}/test.txt", repo_path);
+    fs::write(&test_file_path, "test content").unwrap();
+
+    // Create a commit
+    let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+    // Check that HEAD still points to master
+    let head_ref: RefValue = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+
+    // Check that master branch now points to the commit
+    let master_ref = repo.get_ref("refs/heads/master", false).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, commit_hash);
+
+    // Clean up
+    temp_dir.close().unwrap();
+}
+
+// #[test]
+// fn test_master_branch_dereferencing() {
+//     // Create a temporary directory for the test
+//     let temp_dir = tempfile::tempdir().unwrap();
+//     let repo_path = temp_dir.path().to_str().unwrap();
+//     let repo = Repository::new(repo_path);
+
+//     // Initialize the repository
+//     assert!(repo.init().is_ok());
+
+//     // Create a test file and commit it
+//     let test_file_path = format!("{}/test.txt", repo_path);
+//     fs::write(&test_file_path, "test content").unwrap();
+//     let commit_hash = repo.create_commit("Initial commit").unwrap();
+
+//     // Check that HEAD dereferences to the commit hash
+//     let head_ref = repo.get_ref("HEAD", true).unwrap();
+//     assert!(!head_ref.is_symbolic);
+//     assert_eq!(head_ref.value, commit_hash);
+
+//     // Check that master branch points to the commit
+//     let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+//     assert!(!master_ref.is_symbolic);
+//     assert_eq!(master_ref.value, commit_hash);
+
+//     // Clean up
+//     temp_dir.close().unwrap();
+// }

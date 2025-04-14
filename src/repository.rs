@@ -77,6 +77,11 @@ impl Repository {
                 .map_err(|e| format!("Failed to create directory {}: {}", dir, e))?;
         }
 
+        // Create master branch
+        let master_branch = format!("{}/refs/heads/master", self.gitdir);
+        fs::write(&master_branch, "")
+            .map_err(|e| format!("Failed to create master branch: {}", e))?;
+
         // Create HEAD file
         let head_path = format!("{}/HEAD", self.gitdir);
         fs::write(&head_path, "ref: refs/heads/master\n")
@@ -558,20 +563,10 @@ impl Repository {
 
         let is_symbolic = content.starts_with("ref:");
 
-        if is_symbolic {
+        if is_symbolic && deref {
             // Extract the target ref name and recursively resolve it
             let target_ref = content.strip_prefix("ref:").unwrap().trim();
-            if deref {
-                self.get_ref_internal(target_ref, deref)
-            } else {
-                Ok((
-                    ref_name.to_string(),
-                    RefValue {
-                        value: content.to_string(),
-                        is_symbolic,
-                    },
-                ))
-            }
+            self.get_ref_internal(target_ref, deref)
         } else {
             Ok((
                 ref_name.to_string(),
@@ -640,9 +635,13 @@ impl Repository {
             .get_ref(HEAD, true)
             .map_err(|e| format!("No commits found: {}", e))?;
 
-        let current_hash = Some(head_hash.value);
+        let current_hash = head_hash.value;
 
-        let commits = self.iter_commits_and_parents(vec![current_hash.clone().unwrap()])?;
+        if current_hash.is_empty() {
+            return Ok(());
+        }
+
+        let commits = self.iter_commits_and_parents(vec![current_hash])?;
 
         for hash in commits {
             let commit = self.get_commit(&hash)?;
@@ -717,20 +716,22 @@ impl Repository {
     }
 
     pub fn get_oid_hash(&self, value: &str) -> Result<String, String> {
+        let mut value_to_search = value;
+
         if value == "@" {
-            return self.get_ref(HEAD, true).map(|ref_value| ref_value.value);
+            value_to_search = "HEAD";
         }
 
         // First check if it's a direct hash
-        if Self::is_hash(value)? {
-            return Ok(value.to_string());
+        if Self::is_hash(value_to_search)? {
+            return Ok(value_to_search.to_string());
         }
 
         let refs_to_try = [
-            value.to_string(),
-            format!("refs/{}", value),
-            format!("refs/tags/{}", value),
-            format!("refs/heads/{}", value),
+            value_to_search.to_string(),
+            format!("refs/{}", value_to_search),
+            format!("refs/tags/{}", value_to_search),
+            format!("refs/heads/{}", value_to_search),
         ];
 
         for ref_to_try in refs_to_try {
@@ -742,7 +743,7 @@ impl Repository {
             }
         }
 
-        Err(format!("Invalid hash format: {}", value))
+        Err(format!("Oid hash not found for: {}", value_to_search))
     }
 
     pub fn iter_refs(&self) -> Result<Vec<(String, String)>, String> {
@@ -869,5 +870,16 @@ impl Repository {
         }
 
         Ok(true)
+    }
+
+    pub fn get_branch_name(&self) -> Result<Option<String>, String> {
+        let head_ref: RefValue = self.get_ref(HEAD, false)?;
+
+        if !head_ref.is_symbolic {
+            Ok(None)
+        } else {
+            assert!(head_ref.value.starts_with("ref: refs/heads/"));
+            Ok(Some(head_ref.value[16..].to_string()))
+        }
     }
 }

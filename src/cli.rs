@@ -14,6 +14,7 @@ pub enum Command {
     Visualize,
     IterRefs,
     Branch(String),
+    Status,
     Unknown(String),
 }
 
@@ -87,6 +88,7 @@ impl Command {
                 }
                 Command::Branch(args[1].clone())
             }
+            "status" => Command::Status,
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
     }
