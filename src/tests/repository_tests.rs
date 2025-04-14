@@ -1513,3 +1513,99 @@ fn test_detached_head_and_branch_creation() {
         .unwrap();
     assert_eq!(branch_ref.value, first_commit);
 }
+
+#[test]
+fn test_get_branch_name() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Initially HEAD points to master
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some("master".to_string()));
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Now HEAD should point to master
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some("master".to_string()));
+
+    // Create a new branch and checkout to it
+    let new_branch = "feature-branch";
+    assert!(
+        repo.create_branch(new_branch, Some(first_commit.clone()))
+            .is_ok()
+    );
+    assert!(repo.checkout(new_branch).is_ok());
+
+    // Now HEAD should point to the new branch
+    let branch_name = repo.get_branch_name().unwrap();
+    assert_eq!(branch_name, Some(new_branch.to_string()));
+
+    // Checkout to a commit hash (detached HEAD)
+    assert!(repo.checkout(&first_commit).is_ok());
+    let branch_name = repo.get_branch_name().unwrap();
+    assert!(branch_name.is_none());
+}
+
+#[test]
+fn test_iter_branch_names() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Initially only master exists
+    let branch_names = repo.iter_branch_names().unwrap();
+    assert_eq!(branch_names, vec!["* master"]);
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create multiple branches
+    let branches = vec!["feature-1", "feature-2", "develop"];
+    for branch in &branches {
+        assert!(
+            repo.create_branch(branch, Some(first_commit.clone()))
+                .is_ok()
+        );
+    }
+
+    // Get all branch names (should include master and new branches)
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort(); // Sort for consistent testing
+
+    let mut expected = vec!["* master"];
+    expected.extend(branches);
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
+
+    // Checkout to feature-1 and verify it's marked with *
+    assert!(repo.checkout("feature-1").is_ok());
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort();
+
+    let mut expected = vec!["* feature-1", "develop", "feature-2", "master"];
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
+
+    // Checkout to a commit hash (detached HEAD) and verify no branch is marked with *
+    assert!(repo.checkout(&first_commit).is_ok());
+    let mut branch_names = repo.iter_branch_names().unwrap();
+    branch_names.sort();
+
+    let mut expected = vec!["develop", "feature-1", "feature-2", "master"];
+    expected.sort();
+
+    assert_eq!(branch_names, expected);
+}

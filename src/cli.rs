@@ -13,7 +13,7 @@ pub enum Command {
     Tag(String, String),
     Visualize,
     IterRefs,
-    Branch(String),
+    Branch(Option<String>),
     Status,
     Unknown(String),
 }
@@ -82,12 +82,11 @@ impl Command {
                 Command::IterRefs
             }
             "visualize" => Command::Visualize,
-            "branch" => {
-                if args.len() < 2 {
-                    return Command::Unknown("No branch name provided for branch".to_string());
-                }
-                Command::Branch(args[1].clone())
-            }
+            "branch" => match args.len() {
+                1 => Command::Branch(None),
+                2 => Command::Branch(Some(args[1].clone())),
+                _ => Command::Unknown("Invalid number of arguments for branch".to_string()),
+            },
             "status" => Command::Status,
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

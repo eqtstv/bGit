@@ -31,7 +31,7 @@ impl Visualizer {
         // Get current HEAD
         let head_hash = self.repo.get_ref("HEAD", true)?;
 
-        let refs = self.repo.iter_refs()?;
+        let refs = self.repo.iter_refs("")?;
         let commits = self
             .repo
             .iter_commits_and_parents(refs.iter().map(|(_, hash)| hash.clone()).collect())?;

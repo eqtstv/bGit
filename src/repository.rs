@@ -746,7 +746,7 @@ impl Repository {
         Err(format!("Oid hash not found for: {}", value_to_search))
     }
 
-    pub fn iter_refs(&self) -> Result<Vec<(String, String)>, String> {
+    pub fn iter_refs(&self, prefix: &str) -> Result<Vec<(String, String)>, String> {
         let ref_folder = "refs";
         let refs_dir = format!("{}/{}", self.gitdir, ref_folder);
         let mut refs = Vec::new();
@@ -756,6 +756,7 @@ impl Repository {
             path: &Path,
             ref_folder: &str,
             refs: &mut Vec<(String, String)>,
+            prefix: &str,
         ) -> Result<(), String> {
             let files_to_ignore = [".DS_Store"];
 
@@ -765,6 +766,10 @@ impl Repository {
                 let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
                 let entry_path = entry.path();
 
+                if !format!("{}/", entry_path.to_string_lossy()).starts_with(prefix) {
+                    continue;
+                }
+
                 if files_to_ignore
                     .iter()
                     .any(|f| f == &entry_path.file_name().unwrap().to_string_lossy())
@@ -773,7 +778,7 @@ impl Repository {
                 }
 
                 if entry_path.is_dir() {
-                    collect_refs(&entry_path, ref_folder, refs)?;
+                    collect_refs(&entry_path, ref_folder, refs, prefix)?;
                 } else {
                     let content = fs::read_to_string(&entry_path).map_err(|e| {
                         format!(
@@ -798,7 +803,12 @@ impl Repository {
         }
 
         // Start collecting refs from the refs directory
-        collect_refs(Path::new(&refs_dir), ref_folder, &mut refs)?;
+        collect_refs(
+            Path::new(&refs_dir),
+            ref_folder,
+            &mut refs,
+            format!("{}/{}", self.gitdir, prefix).as_str(),
+        )?;
 
         Ok(refs)
     }
@@ -881,5 +891,28 @@ impl Repository {
             assert!(head_ref.value.starts_with("ref: refs/heads/"));
             Ok(Some(head_ref.value[16..].to_string()))
         }
+    }
+
+    pub fn iter_branch_names(&self) -> Result<Vec<String>, String> {
+        let refs = self.iter_refs("refs/heads/")?;
+        let current_branch = self.get_branch_name()?;
+
+        let branch_names = refs
+            .iter()
+            .map(|(name, _hash)| {
+                let branch_name = name.clone().split("/").last().unwrap().to_string();
+                if let Some(current) = &current_branch {
+                    if branch_name == *current {
+                        format!("* {}", branch_name)
+                    } else {
+                        branch_name
+                    }
+                } else {
+                    branch_name
+                }
+            })
+            .collect();
+
+        Ok(branch_names)
     }
 }
