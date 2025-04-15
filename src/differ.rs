@@ -117,6 +117,24 @@ impl<'a> Differ<'a> {
         Ok(diff)
     }
 
+    pub fn iter_changed_files(&self) -> Result<Vec<String>, String> {
+        let working_tree = self.repo.get_working_tree()?;
+        let entries = self.compare_trees(&[&working_tree, &self.repo.get_commit(HEAD)?.tree])?;
+
+        Ok(entries
+            .into_iter()
+            .filter(|(_, oids)| oids[0] != oids[1])
+            .map(|(path, oids)| {
+                match (oids[0].as_ref(), oids[1].as_ref()) {
+                    (None, Some(_)) => format!("\x1b[32m{}\x1b[0m", path), // Green for added files
+                    (Some(_), None) => format!("\x1b[31m{}\x1b[0m", path), // Red for deleted files
+                    (Some(_), Some(_)) => format!("\x1b[33m{}\x1b[0m", path), // Yellow for modified files
+                    _ => path, // Should never happen due to filter
+                }
+            })
+            .collect())
+    }
+
     pub fn colorize_diff(diff: &[u8]) -> String {
         let mut colored = String::new();
         let diff_str = String::from_utf8_lossy(diff);

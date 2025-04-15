@@ -4,6 +4,7 @@ mod repository;
 mod visualizer;
 
 use cli::Command;
+use differ::Differ;
 use repository::{ObjectType, Repository};
 use std::fs;
 use std::path::Path;
@@ -143,11 +144,17 @@ fn main() {
         Command::Status => {
             let head = repo.get_oid_hash("@").unwrap();
             let branch = repo.get_branch_name().unwrap();
+            let changed_files = Differ::new(&repo).iter_changed_files().unwrap();
 
             if branch.is_none() {
                 println!("HEAD detached at {}", head);
             } else {
                 println!("On branch {}", branch.unwrap());
+            }
+
+            println!("\nCurrent changes:");
+            for file in changed_files {
+                println!("{}", file);
             }
         }
         Command::Reset(commit_hash) => match repo.reset(&commit_hash) {
