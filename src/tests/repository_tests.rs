@@ -1720,7 +1720,7 @@ fn test_reset_multiple_commits() {
 
     // Create third commit
     fs::write(&test_file, "Third content").unwrap();
-    let third_commit = repo.create_commit("Third commit").unwrap();
+    let _third_commit = repo.create_commit("Third commit").unwrap();
 
     // Create fourth commit
     fs::write(&test_file, "Fourth content").unwrap();
