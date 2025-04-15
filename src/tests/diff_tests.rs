@@ -1,4 +1,4 @@
-use crate::repository::Differ;
+use crate::differ::Differ;
 
 #[test]
 fn test_diff_trees_simple() {

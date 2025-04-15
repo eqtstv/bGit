@@ -1,4 +1,5 @@
 mod cli;
+mod differ;
 mod repository;
 mod visualizer;
 
