@@ -1700,3 +1700,126 @@ fn test_reset_detached_head() {
     assert!(!master_ref.is_symbolic);
     assert_eq!(master_ref.value, first_commit);
 }
+
+#[test]
+fn test_reset_multiple_commits() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Second content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Create third commit
+    fs::write(&test_file, "Third content").unwrap();
+    let third_commit = repo.create_commit("Third commit").unwrap();
+
+    // Create fourth commit
+    fs::write(&test_file, "Fourth content").unwrap();
+    let fourth_commit = repo.create_commit("Fourth commit").unwrap();
+
+    // Verify HEAD points to fourth commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, fourth_commit);
+
+    // Verify master branch points to fourth commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, fourth_commit);
+
+    // Reset to second commit
+    assert!(repo.reset(&second_commit).is_ok());
+
+    // Verify HEAD points to second commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, second_commit);
+
+    // Verify master branch points to second commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, second_commit);
+
+    // Verify file content matches second commit
+    assert_eq!(fs::read_to_string(&test_file).unwrap(), "Second content");
+
+    // Create a new branch at fourth commit
+    let new_branch = "feature-branch";
+    assert!(
+        repo.create_branch(new_branch, Some(fourth_commit.clone()))
+            .is_ok()
+    );
+
+    // Verify new branch points to fourth commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", new_branch), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, fourth_commit);
+
+    // Reset to first commit
+    assert!(repo.reset(&first_commit).is_ok());
+
+    // Verify HEAD points to first commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, first_commit);
+
+    // Verify master branch points to first commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, first_commit);
+
+    // Verify file content matches first commit
+    assert_eq!(fs::read_to_string(&test_file).unwrap(), "Initial content");
+
+    // Verify feature branch still points to fourth commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", new_branch), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, fourth_commit);
+
+    // Create a new commit after reset
+    fs::write(&test_file, "New content after reset").unwrap();
+    let new_commit = repo.create_commit("New commit after reset").unwrap();
+
+    // Verify HEAD points to new commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, new_commit);
+
+    // Verify master branch points to new commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, new_commit);
+
+    // Verify file content matches new commit
+    assert_eq!(
+        fs::read_to_string(&test_file).unwrap(),
+        "New content after reset"
+    );
+
+    // Create another branch at the new commit
+    let another_branch = "another-branch";
+    assert!(
+        repo.create_branch(another_branch, Some(new_commit.clone()))
+            .is_ok()
+    );
+
+    // Verify new branch points to new commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", another_branch), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, new_commit);
+
+    // Verify feature branch still points to fourth commit
+    let branch_ref = repo
+        .get_ref(&format!("refs/heads/{}", new_branch), true)
+        .unwrap();
+    assert_eq!(branch_ref.value, fourth_commit);
+
+    // Verify HEAD is symbolic and points to master
+    let head_ref = repo.get_ref(HEAD, false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+}

@@ -942,9 +942,12 @@ impl Repository {
 
     pub fn reset(&self, commit_hash: &str) -> Result<(), String> {
         // Check it the commit hash exists
-        if self.get_commit(commit_hash).is_err() {
-            return Err(format!("Commit with hash: {} not found", commit_hash));
-        }
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        // Update the working directory to match the commit
+        self.read_tree(&commit.tree, Path::new(&self.worktree))?;
 
         // Set the HEAD to the commit hash
         self.set_ref(
