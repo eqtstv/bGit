@@ -1032,10 +1032,15 @@ impl Repository {
         Ok(tree)
     }
 
-    pub fn diff(&self) -> Result<(), String> {
+    pub fn diff(&self) -> Result<String, String> {
+        // check if there is a HEAD
+        let head = self.get_ref(HEAD, false)?;
+        if head.value.is_empty() {
+            return Err("No commits found".to_string());
+        }
+
         let diff = Differ::new(self).diff_current_working_tree()?;
         let colored_diff = Differ::colorize_diff(&diff);
-        println!("{}", colored_diff);
-        Ok(())
+        Ok(colored_diff)
     }
 }

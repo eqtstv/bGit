@@ -172,7 +172,7 @@ fn main() {
             }
         },
         Command::Diff => match repo.diff() {
-            Ok(_) => (),
+            Ok(diff) => println!("{}", diff),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

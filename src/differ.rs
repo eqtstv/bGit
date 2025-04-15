@@ -113,7 +113,7 @@ impl<'a> Differ<'a> {
 
     pub fn diff_current_working_tree(&self) -> Result<Vec<u8>, String> {
         let working_tree = self.repo.get_working_tree()?;
-        let diff = self.diff_trees(&working_tree, &self.repo.get_commit(HEAD)?.tree)?;
+        let diff = self.diff_trees(&self.repo.get_commit(HEAD)?.tree, &working_tree)?;
         Ok(diff)
     }
 

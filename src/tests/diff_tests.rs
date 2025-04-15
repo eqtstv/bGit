@@ -113,3 +113,132 @@ fn test_diff_trees_added_removed_files() {
     assert!(diff_str.contains("-File 1 content"));
     assert!(diff_str.contains("+File 2 content"));
 }
+
+#[test]
+fn test_diff_modified_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file and commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    repo.create_commit("First commit").unwrap();
+
+    // Modify file
+    fs::write(&test_file, "Updated content").unwrap();
+
+    // Get diff
+    let diff = repo.diff().unwrap();
+
+    // Verify diff contains expected content
+    assert!(diff.contains("--- a/test.txt"));
+    assert!(diff.contains("+++ b/test.txt"));
+    assert!(diff.contains("-Initial content"), "{}", diff);
+    assert!(diff.contains("+Updated content"), "{}", diff);
+}
+
+#[test]
+fn test_diff_added_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    repo.create_commit("First commit").unwrap();
+
+    // Add new file
+    let new_file = temp_dir.path().join("new.txt");
+    fs::write(&new_file, "New file content").unwrap();
+
+    // Get diff
+    let diff = repo.diff().unwrap();
+
+    // Verify diff contains new file
+    assert!(diff.contains("--- a/new.txt"));
+    assert!(diff.contains("+++ b/new.txt"));
+    assert!(diff.contains("+New file content"));
+}
+
+#[test]
+fn test_diff_removed_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial files and commit
+    let test_file = temp_dir.path().join("test.txt");
+    let other_file = temp_dir.path().join("other.txt");
+    fs::write(&test_file, "Test content").unwrap();
+    fs::write(&other_file, "Other content").unwrap();
+    repo.create_commit("First commit").unwrap();
+
+    // Remove file
+    fs::remove_file(&other_file).unwrap();
+
+    // Get diff
+    let diff = repo.diff().unwrap();
+
+    // Verify diff shows removed file
+    assert!(diff.contains("--- a/other.txt"));
+    assert!(diff.contains("+++ b/other.txt"));
+    assert!(diff.contains("-Other content"));
+}
+
+#[test]
+fn test_diff_no_changes() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file and commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    repo.create_commit("First commit").unwrap();
+
+    // Get diff (should be empty)
+    let diff = repo.diff().unwrap();
+    assert!(diff.is_empty());
+}
+
+#[test]
+fn test_diff_no_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Remove HEAD file
+    let head_path = format!("{}/{}/HEAD", repo_path, GIT_DIR);
+    fs::remove_file(&head_path).unwrap();
+
+    // Get diff should fail
+    let result = repo.diff();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Failed to read HEAD file"));
+}
+
+#[test]
+fn test_diff_invalid_repository() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    // Don't initialize repository
+
+    // Get diff should fail
+    let result = repo.diff();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Failed to read HEAD file"));
+}
