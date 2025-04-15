@@ -941,6 +941,9 @@ impl Repository {
     }
 
     pub fn reset(&self, commit_hash: &str) -> Result<(), String> {
+        // For now reset is working as --hard, so it will remove
+        // all the changes in the working directory and set the HEAD to the commit hash
+
         // Check it the commit hash exists
         let commit = self
             .get_commit(commit_hash)
