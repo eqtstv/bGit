@@ -1005,4 +1005,16 @@ impl Repository {
 
         Ok(())
     }
+
+    pub fn get_working_tree(&self) -> Result<String, String> {
+        let tree = self.create_tree(Path::new(&self.worktree))?;
+        Ok(tree)
+    }
+
+    pub fn diff(&self) -> Result<(), String> {
+        let diff = Differ::new(self).diff_current_working_tree()?;
+        let colored_diff = Differ::colorize_diff(&diff);
+        println!("{}", colored_diff);
+        Ok(())
+    }
 }

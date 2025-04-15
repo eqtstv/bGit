@@ -164,6 +164,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Diff => match repo.diff() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

@@ -17,6 +17,7 @@ pub enum Command {
     Status,
     Reset(String),
     Show(String),
+    Diff,
     Unknown(String),
 }
 
@@ -101,6 +102,12 @@ impl Command {
                     return Command::Unknown("No commit hash provided for show".to_string());
                 }
                 Command::Show(args[1].clone())
+            }
+            "diff" => {
+                if args.len() > 1 {
+                    return Command::Unknown("diff does not take any arguments".to_string());
+                }
+                Command::Diff
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

@@ -1,4 +1,4 @@
-use crate::repository::{ObjectType, Repository};
+use crate::repository::{HEAD, ObjectType, Repository};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
@@ -109,6 +109,12 @@ impl<'a> Differ<'a> {
             .map_err(|e| format!("Failed to run diff command: {}", e))?;
 
         Ok(output.stdout)
+    }
+
+    pub fn diff_current_working_tree(&self) -> Result<Vec<u8>, String> {
+        let working_tree = self.repo.get_working_tree()?;
+        let diff = self.diff_trees(&working_tree, &self.repo.get_commit(HEAD)?.tree)?;
+        Ok(diff)
     }
 
     pub fn colorize_diff(diff: &[u8]) -> String {
