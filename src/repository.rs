@@ -996,8 +996,7 @@ impl Repository {
                 .get_commit(parent)
                 .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
 
-            let diff = Differ::new().diff_trees(&parent_commit.tree, &commit.tree)?;
-            println!("Diff: {:?}", diff);
+            Differ::new().diff_trees(&parent_commit.tree, &commit.tree)?;
         }
 
         Ok(())
@@ -1005,6 +1004,12 @@ impl Repository {
 }
 
 pub struct Differ {}
+
+impl Default for Differ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Differ {
     pub fn new() -> Self {
