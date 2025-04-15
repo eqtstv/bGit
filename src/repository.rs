@@ -580,6 +580,16 @@ impl Repository {
         }
     }
 
+    pub fn delete_ref(&self, ref_name: &str, deref: bool) -> Result<(), String> {
+        let ref_value = self.get_ref_internal(ref_name, deref)?;
+
+        let ref_path = format!("{}/{}", self.gitdir, ref_value.0);
+
+        fs::remove_file(&ref_path)
+            .map_err(|e| format!("Failed to delete {} file: {}", ref_name, e))?;
+        Ok(())
+    }
+
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
         // Get the raw commit data
         let hash = self.get_oid_hash(hash)?;
@@ -971,6 +981,10 @@ impl Repository {
     pub fn merge(&self, branch_name: &str) -> Result<(), String> {
         // TODO: Implement merge
         println!("Merging branch {}", branch_name);
+
+        // TODO: remove this
+        let current_branch = self.get_branch_name()?;
+        self.delete_ref(current_branch.as_ref().unwrap(), false)?;
 
         Ok(())
     }
