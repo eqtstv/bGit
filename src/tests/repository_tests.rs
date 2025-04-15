@@ -1614,3 +1614,89 @@ fn test_iter_branch_names() {
 
     assert_eq!(branch_names, expected);
 }
+
+#[test]
+fn test_reset_success() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Verify HEAD points to second commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, second_commit);
+
+    // Verify master branch points to second commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, second_commit);
+
+    // Reset to first commit
+    assert!(
+        repo.reset(&first_commit).is_ok(),
+        "Failed to reset to commit, {}",
+        repo.reset(&first_commit).unwrap_err()
+    );
+
+    // Verify HEAD points to first commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, first_commit);
+
+    // Verify master branch points to first commit
+    let master_ref = repo.get_ref("refs/heads/master", true).unwrap();
+    assert_eq!(master_ref.value, first_commit);
+}
+
+#[test]
+fn test_reset_invalid_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to reset to non-existent commit
+    let result = repo.reset("a".repeat(40).as_str());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Commit with hash:"));
+}
+
+#[test]
+fn test_reset_detached_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let _second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Reset to first commit
+    assert!(repo.reset(&first_commit).is_ok());
+
+    // Verify HEAD is in normal state
+    let head_ref = repo.get_ref(HEAD, false).unwrap();
+    assert!(head_ref.is_symbolic);
+    assert_eq!(head_ref.value, "ref: refs/heads/master");
+
+    // Verify master branch points to first commit
+    let master_ref = repo.get_ref("refs/heads/master", false).unwrap();
+    assert!(!master_ref.is_symbolic);
+    assert_eq!(master_ref.value, first_commit);
+}

@@ -939,4 +939,24 @@ impl Repository {
 
         Ok(branch_names)
     }
+
+    pub fn reset(&self, commit_hash: &str) -> Result<(), String> {
+        // Check it the commit hash exists
+        if self.get_commit(commit_hash).is_err() {
+            return Err(format!("Commit with hash: {} not found", commit_hash));
+        }
+
+        // Set the HEAD to the commit hash
+        self.set_ref(
+            HEAD,
+            RefValue {
+                value: commit_hash.to_string(),
+                is_symbolic: false,
+            },
+            true,
+        )
+        .map_err(|e| format!("Failed to reset to commit: {}", e))?;
+
+        Ok(())
+    }
 }
