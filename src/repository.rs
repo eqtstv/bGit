@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 
+use crate::differ::Differ;
+
 pub const GIT_DIR: &str = ".bgit";
 pub const HEAD: &str = "HEAD";
 
@@ -938,5 +940,81 @@ impl Repository {
             .collect();
 
         Ok(branch_names)
+    }
+
+    pub fn reset(&self, commit_hash: &str) -> Result<(), String> {
+        // For now reset is working as --hard, so it will remove
+        // all the changes in the working directory and set the HEAD to the commit hash
+
+        // Check it the commit hash exists
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        // Update the working directory to match the commit
+        self.read_tree(&commit.tree, Path::new(&self.worktree))?;
+
+        // Set the HEAD to the commit hash
+        self.set_ref(
+            HEAD,
+            RefValue {
+                value: commit_hash.to_string(),
+                is_symbolic: false,
+            },
+            true,
+        )
+        .map_err(|e| format!("Failed to reset to commit: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn print_commit(&self, commit_hash: &str) -> Result<(), String> {
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        println!("Commit: {}", commit_hash);
+        println!("Tree: {}", commit.tree);
+        if let Some(parent) = &commit.parent {
+            println!("Parent: {}", parent);
+        } else {
+            println!("Parent: None");
+        }
+        println!("Timestamp: {}", commit.timestamp);
+        println!("Message: {}", commit.message);
+
+        Ok(())
+    }
+
+    pub fn show(&self, commit_hash: &str) -> Result<(), String> {
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        self.print_commit(commit_hash)?;
+
+        if let Some(parent) = &commit.parent {
+            let parent_commit = self
+                .get_commit(parent)
+                .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
+
+            let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
+            let colored_diff = Differ::colorize_diff(&diff);
+            println!("{}", colored_diff);
+        }
+
+        Ok(())
+    }
+
+    pub fn get_working_tree(&self) -> Result<String, String> {
+        let tree = self.create_tree(Path::new(&self.worktree))?;
+        Ok(tree)
+    }
+
+    pub fn diff(&self) -> Result<(), String> {
+        let diff = Differ::new(self).diff_current_working_tree()?;
+        let colored_diff = Differ::colorize_diff(&diff);
+        println!("{}", colored_diff);
+        Ok(())
     }
 }

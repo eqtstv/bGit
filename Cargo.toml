@@ -6,9 +6,9 @@ edition = "2024"
 [dependencies]
 hex = "0.4.3"
 sha1 = "0.10.5"
-tempfile = "3.8"
+tempfile = "3.8.1"
 regex = "1.10.2"
-chrono = "0.4.40"
+chrono = "0.4.31"
 graphviz-rust = "0.9.3"
 webbrowser = "0.8"
 
