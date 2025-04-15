@@ -156,6 +156,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Show(commit_hash) => match repo.show(&commit_hash) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);

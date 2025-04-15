@@ -16,6 +16,7 @@ pub enum Command {
     Branch(Option<String>),
     Status,
     Reset(String),
+    Show(String),
     Unknown(String),
 }
 
@@ -94,6 +95,12 @@ impl Command {
                     return Command::Unknown("No commit hash provided for reset".to_string());
                 }
                 Command::Reset(args[1].clone())
+            }
+            "show" => {
+                if args.len() < 2 {
+                    return Command::Unknown("No commit hash provided for show".to_string());
+                }
+                Command::Show(args[1].clone())
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

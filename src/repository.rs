@@ -965,4 +965,55 @@ impl Repository {
 
         Ok(())
     }
+
+    pub fn print_commit(&self, commit_hash: &str) -> Result<(), String> {
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        println!("Commit: {}", commit_hash);
+        println!("Tree: {}", commit.tree);
+        if let Some(parent) = &commit.parent {
+            println!("Parent: {}", parent);
+        } else {
+            println!("Parent: None");
+        }
+        println!("Timestamp: {}", commit.timestamp);
+        println!("Message: {}", commit.message);
+
+        Ok(())
+    }
+
+    pub fn show(&self, commit_hash: &str) -> Result<(), String> {
+        let commit = self
+            .get_commit(commit_hash)
+            .map_err(|_e| format!("Commit with hash: {} not found", commit_hash))?;
+
+        self.print_commit(commit_hash)?;
+
+        if let Some(parent) = &commit.parent {
+            let parent_commit = self
+                .get_commit(parent)
+                .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
+
+            let diff = Differ::new().diff_trees(&parent_commit.tree, &commit.tree)?;
+            println!("Diff: {:?}", diff);
+        }
+
+        Ok(())
+    }
+}
+
+pub struct Differ {}
+
+impl Differ {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn diff_trees(self, old_tree: &str, new_tree: &str) -> Result<(), String> {
+        println!("Diff between trees {} and {}", old_tree, new_tree);
+
+        Ok(())
+    }
 }
