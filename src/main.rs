@@ -172,7 +172,23 @@ fn main() {
             }
         },
         Command::Diff => match repo.diff() {
-            Ok(_) => (),
+            Ok(diff) => {
+                if diff.is_empty() {
+                    println!("No changes");
+                } else {
+                    println!("{}", diff);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Command::Merge(branch_name) => match repo.merge(&branch_name) {
+            Ok(_) => println!(
+                "Successfully merged branch {} into current branch",
+                branch_name
+            ),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

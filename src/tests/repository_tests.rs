@@ -1945,3 +1945,109 @@ fn test_show_first_commit() {
     // Show first commit (should work even though it has no parent)
     assert!(repo.show(&first_commit).is_ok());
 }
+
+#[test]
+fn test_delete_ref_branch() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Create a branch
+    repo.create_branch("test-branch", Some(commit_hash))
+        .unwrap();
+
+    // Verify branch exists
+    assert!(repo.is_branch("test-branch").unwrap());
+
+    // Delete the branch
+    repo.delete_ref("refs/heads/test-branch", false).unwrap();
+
+    // Verify branch is deleted
+    assert!(!repo.is_branch("test-branch").unwrap());
+}
+
+#[test]
+fn test_delete_ref_tag() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Create a tag
+    repo.create_tag("v1.0", &commit_hash).unwrap();
+
+    // Verify tag exists
+    let refs = repo.iter_refs("refs/tags/").unwrap();
+    assert!(refs.iter().any(|(name, _)| name == "refs/tags/v1.0"));
+
+    // Delete the tag
+    repo.delete_ref("refs/tags/v1.0", false).unwrap();
+
+    // Verify tag is deleted
+    let refs = repo.iter_refs("refs/tags/").unwrap();
+    assert!(!refs.iter().any(|(name, _)| name == "refs/tags/v1.0"));
+}
+
+#[test]
+fn test_delete_ref_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let _commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Verify HEAD exists
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.value.starts_with("ref: refs/heads/"));
+
+    // Delete HEAD
+    repo.delete_ref("HEAD", false).unwrap();
+
+    // Verify HEAD is deleted
+    assert!(repo.get_ref("HEAD", false).is_err());
+}
+
+#[test]
+fn test_delete_ref_nonexistent() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to delete a non-existent branch
+    let result = repo.delete_ref("refs/heads/nonexistent", false);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Failed to read refs/heads/nonexistent file")
+    );
+
+    // Try to delete a non-existent tag
+    let result = repo.delete_ref("refs/tags/nonexistent", false);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Failed to read refs/tags/nonexistent file")
+    );
+}

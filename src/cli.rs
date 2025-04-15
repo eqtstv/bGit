@@ -18,6 +18,7 @@ pub enum Command {
     Reset(String),
     Show(String),
     Diff,
+    Merge(String),
     Unknown(String),
 }
 
@@ -108,6 +109,12 @@ impl Command {
                     return Command::Unknown("diff does not take any arguments".to_string());
                 }
                 Command::Diff
+            }
+            "merge" => {
+                if args.len() < 2 {
+                    return Command::Unknown("No branch name provided for merge".to_string());
+                }
+                Command::Merge(args[1].clone())
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }

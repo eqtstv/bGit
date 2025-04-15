@@ -580,6 +580,16 @@ impl Repository {
         }
     }
 
+    pub fn delete_ref(&self, ref_name: &str, deref: bool) -> Result<(), String> {
+        let ref_value = self.get_ref_internal(ref_name, deref)?;
+
+        let ref_path = format!("{}/{}", self.gitdir, ref_value.0);
+
+        fs::remove_file(&ref_path)
+            .map_err(|e| format!("Failed to delete {} file: {}", ref_name, e))?;
+        Ok(())
+    }
+
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
         // Get the raw commit data
         let hash = self.get_oid_hash(hash)?;
@@ -968,6 +978,17 @@ impl Repository {
         Ok(())
     }
 
+    pub fn merge(&self, branch_name: &str) -> Result<(), String> {
+        // TODO: Implement merge
+        println!("Merging branch {}", branch_name);
+
+        // TODO: remove this
+        let current_branch = self.get_branch_name()?;
+        self.delete_ref(current_branch.as_ref().unwrap(), false)?;
+
+        Ok(())
+    }
+
     pub fn print_commit(&self, commit_hash: &str) -> Result<(), String> {
         let commit = self
             .get_commit(commit_hash)
@@ -1011,10 +1032,15 @@ impl Repository {
         Ok(tree)
     }
 
-    pub fn diff(&self) -> Result<(), String> {
+    pub fn diff(&self) -> Result<String, String> {
+        // check if there is a HEAD
+        let head = self.get_ref(HEAD, false)?;
+        if head.value.is_empty() {
+            return Err("No commits found".to_string());
+        }
+
         let diff = Differ::new(self).diff_current_working_tree()?;
         let colored_diff = Differ::colorize_diff(&diff);
-        println!("{}", colored_diff);
-        Ok(())
+        Ok(colored_diff)
     }
 }
