@@ -1,10 +1,15 @@
 use sha1::{Digest, Sha1};
 use std::collections::VecDeque;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
+use std::process::Command;
+use tempfile::NamedTempFile;
 
 pub const GIT_DIR: &str = ".bgit";
 pub const HEAD: &str = "HEAD";
+
+type TreeComparisonResult = Vec<(String, Vec<Option<String>>)>;
 
 #[derive(Debug)]
 pub enum ObjectType {
@@ -996,29 +1001,147 @@ impl Repository {
                 .get_commit(parent)
                 .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
 
-            Differ::new().diff_trees(&parent_commit.tree, &commit.tree)?;
+            let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
+            let colored_diff = colorize_diff(&diff);
+            println!("{}", colored_diff);
         }
 
         Ok(())
     }
 }
 
-pub struct Differ {}
+pub struct Differ<'a> {
+    repo: &'a Repository,
+}
 
-impl Default for Differ {
-    fn default() -> Self {
-        Self::new()
+impl<'a> Differ<'a> {
+    pub fn new(repo: &'a Repository) -> Self {
+        Self { repo }
+    }
+
+    pub fn compare_trees(&self, trees: &[&str]) -> Result<TreeComparisonResult, String> {
+        let mut entries: std::collections::HashMap<String, Vec<Option<String>>> =
+            std::collections::HashMap::new();
+
+        // Initialize entries with None for each tree
+        for (i, tree_hash) in trees.iter().enumerate() {
+            if tree_hash.is_empty() {
+                continue;
+            }
+
+            let tree_data = self.repo.get_tree_data(tree_hash)?;
+            for (_, path, oid, obj_type) in tree_data {
+                // If it's a tree (directory), recursively get its contents
+                if matches!(obj_type, ObjectType::Tree) {
+                    let sub_tree_data = self.repo.get_tree_data(&oid)?;
+                    for (_, sub_path, sub_oid, _) in sub_tree_data {
+                        let full_path = format!("{}/{}", path, sub_path);
+                        if !entries.contains_key(&full_path) {
+                            entries.insert(full_path.clone(), vec![None; trees.len()]);
+                        }
+                        entries.get_mut(&full_path).unwrap()[i] = Some(sub_oid);
+                    }
+                } else {
+                    if !entries.contains_key(&path) {
+                        entries.insert(path.clone(), vec![None; trees.len()]);
+                    }
+                    entries.get_mut(&path).unwrap()[i] = Some(oid);
+                }
+            }
+        }
+
+        // Convert HashMap to Vec and sort by path
+        let mut result: TreeComparisonResult = entries.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+
+        Ok(result)
+    }
+
+    pub fn diff_trees(&self, old_tree: &str, new_tree: &str) -> Result<Vec<u8>, String> {
+        let mut output = Vec::new();
+        let entries = self.compare_trees(&[old_tree, new_tree])?;
+
+        for (path, oids) in entries {
+            if oids[0] != oids[1] {
+                let diff = self.diff_blobs(oids[0].as_deref(), oids[1].as_deref(), &path)?;
+                output.extend_from_slice(&diff);
+            }
+        }
+
+        Ok(output)
+    }
+
+    fn diff_blobs(
+        &self,
+        from_oid: Option<&str>,
+        to_oid: Option<&str>,
+        path: &str,
+    ) -> Result<Vec<u8>, String> {
+        // Create temporary files for the old and new content
+        let mut from_file =
+            NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+        let mut to_file =
+            NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+        // Write content to temporary files if oids exist
+        if let Some(oid) = from_oid {
+            let content = self.repo.get_object(oid)?;
+            from_file
+                .write_all(&content)
+                .map_err(|e| format!("Failed to write to temp file: {}", e))?;
+        }
+        if let Some(oid) = to_oid {
+            let content = self.repo.get_object(oid)?;
+            to_file
+                .write_all(&content)
+                .map_err(|e| format!("Failed to write to temp file: {}", e))?;
+        }
+
+        // Flush the files to ensure content is written
+        from_file
+            .flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+        to_file
+            .flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+
+        // Run diff command
+        let output = Command::new("diff")
+            .args([
+                "--unified",
+                "--show-c-function",
+                "--label",
+                &format!("a/{}", path),
+                from_file.path().to_str().unwrap(),
+                "--label",
+                &format!("b/{}", path),
+                to_file.path().to_str().unwrap(),
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run diff command: {}", e))?;
+
+        Ok(output.stdout)
     }
 }
 
-impl Differ {
-    pub fn new() -> Self {
-        Self {}
+fn colorize_diff(diff: &[u8]) -> String {
+    let mut colored = String::new();
+    let diff_str = String::from_utf8_lossy(diff);
+
+    for line in diff_str.lines() {
+        if line.starts_with('+') && !line.starts_with("+++") {
+            colored.push_str("\x1b[32m"); // Green
+            colored.push_str(line);
+            colored.push_str("\x1b[0m"); // Reset
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            colored.push_str("\x1b[31m"); // Red
+            colored.push_str(line);
+            colored.push_str("\x1b[0m"); // Reset
+        } else {
+            colored.push_str(line);
+        }
+        colored.push('\n');
     }
 
-    pub fn diff_trees(self, old_tree: &str, new_tree: &str) -> Result<(), String> {
-        println!("Diff between trees {} and {}", old_tree, new_tree);
-
-        Ok(())
-    }
+    colored
 }

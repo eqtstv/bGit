@@ -1823,3 +1823,125 @@ fn test_reset_multiple_commits() {
     assert!(head_ref.is_symbolic);
     assert_eq!(head_ref.value, "ref: refs/heads/master");
 }
+
+#[test]
+fn test_show_simple() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let _first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify file
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Show second commit
+    assert!(repo.show(&second_commit).is_ok());
+}
+
+#[test]
+fn test_show_nested_changes() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create nested directory structure
+    let nested_dir = temp_dir.path().join("src").join("nested");
+    fs::create_dir_all(&nested_dir).unwrap();
+    let nested_file = nested_dir.join("file.txt");
+    fs::write(&nested_file, "Initial content").unwrap();
+    let _first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify nested file
+    fs::write(&nested_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Show second commit
+    assert!(repo.show(&second_commit).is_ok());
+}
+
+#[test]
+fn test_show_multiple_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create multiple files
+    let file1 = temp_dir.path().join("file1.txt");
+    let file2 = temp_dir.path().join("file2.txt");
+    fs::write(&file1, "File 1 initial").unwrap();
+    fs::write(&file2, "File 2 initial").unwrap();
+    let _first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify both files
+    fs::write(&file1, "File 1 updated").unwrap();
+    fs::write(&file2, "File 2 updated").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Show second commit
+    assert!(repo.show(&second_commit).is_ok());
+}
+
+#[test]
+fn test_show_added_removed_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file
+    let file1 = temp_dir.path().join("file1.txt");
+    fs::write(&file1, "File 1 content").unwrap();
+    let _first_commit = repo.create_commit("First commit").unwrap();
+
+    // Remove file1 and add file2
+    fs::remove_file(&file1).unwrap();
+    let file2 = temp_dir.path().join("file2.txt");
+    fs::write(&file2, "File 2 content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Show second commit
+    assert!(repo.show(&second_commit).is_ok());
+}
+
+#[test]
+fn test_show_invalid_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to show non-existent commit
+    let result = repo.show("a".repeat(40).as_str());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Commit with hash:"));
+}
+
+#[test]
+fn test_show_first_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create first commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Show first commit (should work even though it has no parent)
+    assert!(repo.show(&first_commit).is_ok());
+}
