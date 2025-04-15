@@ -968,6 +968,13 @@ impl Repository {
         Ok(())
     }
 
+    pub fn merge(&self, branch_name: &str) -> Result<(), String> {
+        // TODO: Implement merge
+        println!("Merging branch {}", branch_name);
+
+        Ok(())
+    }
+
     pub fn print_commit(&self, commit_hash: &str) -> Result<(), String> {
         let commit = self
             .get_commit(commit_hash)

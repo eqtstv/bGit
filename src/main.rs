@@ -178,6 +178,16 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Merge(branch_name) => match repo.merge(&branch_name) {
+            Ok(_) => println!(
+                "Successfully merged branch {} into current branch",
+                branch_name
+            ),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);
