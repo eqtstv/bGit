@@ -182,7 +182,7 @@ impl<'a> Differ<'a> {
         // If both OIDs are the same, just return the content
         if o_head == o_other {
             if let Some(oid) = o_head {
-                return Ok(self.repo.get_object(oid)?);
+                return Ok(self.repo.get_object(oid).unwrap());
             }
             return Ok(Vec::new());
         }
