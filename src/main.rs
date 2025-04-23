@@ -5,7 +5,7 @@ mod visualizer;
 
 use cli::Command;
 use differ::Differ;
-use repository::{ObjectType, Repository};
+use repository::{MERGE_HEAD, ObjectType, Repository};
 use std::fs;
 use std::path::Path;
 use visualizer::Visualizer;
@@ -150,6 +150,11 @@ fn main() {
                 println!("HEAD detached at {}", head);
             } else {
                 println!("On branch {}", branch.unwrap());
+            }
+
+            let merge_head = repo.get_ref(MERGE_HEAD, true).unwrap();
+            if !merge_head.value.is_empty() {
+                println!("Merging with {}", merge_head.value);
             }
 
             println!("\nCurrent changes:");

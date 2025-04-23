@@ -7,6 +7,7 @@ use crate::differ::Differ;
 
 pub const GIT_DIR: &str = ".bgit";
 pub const HEAD: &str = "HEAD";
+pub const MERGE_HEAD: &str = "MERGE_HEAD";
 
 #[derive(Debug)]
 pub enum ObjectType {
@@ -492,6 +493,16 @@ impl Repository {
                 commit_data.extend_from_slice(parent_hash.value.as_bytes());
                 commit_data.extend_from_slice(b"\n");
             }
+        }
+
+        // Merge HEAD
+        if let Ok(merge_head) = self.get_ref(MERGE_HEAD, true) {
+            commit_data.extend_from_slice(b"parent ");
+            commit_data.extend_from_slice(merge_head.value.as_bytes());
+            commit_data.extend_from_slice(b"\n");
+
+            // Remove MERGE_HEAD
+            self.delete_ref(MERGE_HEAD, false)?;
         }
 
         // Add datetime
@@ -990,6 +1001,16 @@ impl Repository {
         // Get head commits
         let curr_head_commit = self.get_commit(&head_ref.value).unwrap();
         let branch_head_commit = self.get_commit(&branch_ref.value).unwrap();
+
+        // Set MERGE_HEAD
+        self.set_ref(
+            MERGE_HEAD,
+            RefValue {
+                value: branch_ref.value,
+                is_symbolic: false,
+            },
+            false,
+        )?;
 
         // Merge the trees
         self.read_tree_merged(&curr_head_commit.tree, &branch_head_commit.tree)?;
