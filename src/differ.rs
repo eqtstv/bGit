@@ -179,6 +179,14 @@ impl<'a> Differ<'a> {
         o_head: Option<&str>,
         o_other: Option<&str>,
     ) -> Result<Vec<u8>, String> {
+        // If both OIDs are the same, just return the content
+        if o_head == o_other {
+            if let Some(oid) = o_head {
+                return Ok(self.repo.get_object(oid)?);
+            }
+            return Ok(Vec::new());
+        }
+
         let mut head_file =
             NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
         let mut other_file =

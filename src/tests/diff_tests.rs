@@ -409,3 +409,151 @@ fn test_merge_trees_python_code() {
 #endif /* HEAD */"#;
     assert_eq!(merged_content.trim(), expected);
 }
+
+#[test]
+fn test_merge_trees_multiple_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial files and commit
+    let file1 = temp_dir.path().join("file1.txt");
+    let file2 = temp_dir.path().join("file2.txt");
+    fs::write(&file1, "File 1 initial").unwrap();
+    fs::write(&file2, "File 2 initial").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify files and commit
+    fs::write(&file1, "File 1 modified").unwrap();
+    fs::write(&file2, "File 2 modified").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content for both files
+    let file1_content = String::from_utf8_lossy(&merged["file1.txt"]);
+    let file2_content = String::from_utf8_lossy(&merged["file2.txt"]);
+
+    assert!(file1_content.contains("File 1 initial"));
+    assert!(file1_content.contains("File 1 modified"));
+    assert!(file2_content.contains("File 2 initial"));
+    assert!(file2_content.contains("File 2 modified"));
+}
+
+#[test]
+fn test_merge_trees_added_removed_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial files and commit
+    let file1 = temp_dir.path().join("file1.txt");
+    let file2 = temp_dir.path().join("file2.txt");
+    fs::write(&file1, "File 1 content").unwrap();
+    fs::write(&file2, "File 2 content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Remove file1 and add file3
+    fs::remove_file(&file1).unwrap();
+    let file3 = temp_dir.path().join("file3.txt");
+    fs::write(&file3, "File 3 content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content
+    assert!(merged.contains_key("file1.txt")); // Removed file should be marked as deleted
+    assert!(merged.contains_key("file2.txt")); // Unchanged file should be present
+    assert!(merged.contains_key("file3.txt")); // New file should be present
+    let file2_content = String::from_utf8_lossy(&merged["file2.txt"]);
+    let file3_content = String::from_utf8_lossy(&merged["file3.txt"]);
+    assert!(file2_content.contains("File 2 content"));
+    assert!(file3_content.contains("File 3 content"));
+}
+
+#[test]
+fn test_merge_trees_empty_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create empty file and commit
+    let empty_file = temp_dir.path().join("empty.txt");
+    fs::write(&empty_file, "").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Add content to file and commit
+    fs::write(&empty_file, "New content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content
+    let merged_content = String::from_utf8_lossy(&merged["empty.txt"]);
+    assert!(merged_content.contains("New content"));
+}
+
+#[test]
+fn test_merge_trees_subdirectories() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create subdirectory and file, commit
+    let subdir = temp_dir.path().join("subdir");
+    fs::create_dir(&subdir).unwrap();
+    let file = subdir.join("file.txt");
+    fs::write(&file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify file in subdir and add new file
+    fs::write(&file, "Modified content").unwrap();
+    let new_file = subdir.join("new.txt");
+    fs::write(&new_file, "New file content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content
+    let file_content = String::from_utf8_lossy(&merged["subdir/file.txt"]);
+    let new_file_content = String::from_utf8_lossy(&merged["subdir/new.txt"]);
+    assert!(file_content.contains("Initial content"));
+    assert!(file_content.contains("Modified content"));
+    assert!(new_file_content.contains("New file content"));
+}
