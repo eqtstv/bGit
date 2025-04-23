@@ -996,7 +996,9 @@ impl Repository {
     pub fn merge(&self, branch_name: &str) -> Result<(), String> {
         // Get refs
         let head_ref = self.get_ref(HEAD, true).unwrap();
-        let branch_ref = self.get_ref(branch_name, true).unwrap();
+        let branch_ref = self
+            .get_ref(format!("refs/heads/{}", branch_name).as_str(), true)
+            .unwrap();
 
         // Get head commits
         let curr_head_commit = self.get_commit(&head_ref.value).unwrap();
@@ -1013,7 +1015,7 @@ impl Repository {
         )?;
 
         let base_commit = self
-            .get_commit(&self.get_merge_base(&curr_head_commit.tree, &branch_head_commit.tree)?)
+            .get_commit(&self.get_merge_base(&curr_head_commit._oid, &branch_head_commit._oid)?)
             .unwrap();
 
         // Merge the trees
@@ -1022,6 +1024,10 @@ impl Repository {
             &branch_head_commit.tree,
             Some(&base_commit.tree),
         )?;
+
+        // TODO: Remove this later?
+        // Remove MERGE_HEAD after successful merge
+        self.delete_ref(MERGE_HEAD, false)?;
 
         println!(
             "Successfully merged branch: {} into current branch",

@@ -1,7 +1,8 @@
-use crate::repository::{GIT_DIR, HEAD, ObjectType, RefValue, Repository};
+use crate::repository::{GIT_DIR, HEAD, MERGE_HEAD, ObjectType, RefValue, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use tempfile::tempdir;
 
 #[test]
 fn test_repository_init_success() {
@@ -2181,4 +2182,46 @@ fn test_get_merge_base_different_branches() {
     // Find merge base between the two commits
     let merge_base = repo.get_merge_base(&commit1, &commit2).unwrap();
     assert_eq!(merge_base, initial_commit);
+}
+
+#[test]
+fn test_merge_success() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master and make changes
+    repo.checkout("master").unwrap();
+    fs::write(temp_dir.path().join("file1.txt"), "master content").unwrap();
+    fs::write(temp_dir.path().join("file3.txt"), "new file in master").unwrap();
+    repo.create_commit("Master changes").unwrap();
+
+    // Merge feature branch into master
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+    let file3_content = fs::read_to_string(temp_dir.path().join("file3.txt")).unwrap();
+
+    // The merge should have resolved conflicts and kept all files
+    assert!(file1_content.contains("master content") || file1_content.contains("feature content"));
+    assert_eq!(file2_content, "new file in feature");
+    assert_eq!(file3_content, "new file in master");
+
+    // Verify MERGE_HEAD was removed
+    assert!(!Path::new(&format!("{}/{}", repo.gitdir, MERGE_HEAD)).exists());
 }
