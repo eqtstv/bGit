@@ -2051,3 +2051,134 @@ fn test_delete_ref_nonexistent() {
             .contains("Failed to read refs/tags/nonexistent file")
     );
 }
+
+#[test]
+fn test_get_merge_base() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create two branches from first commit
+    repo.create_branch("branch1", Some(first_commit.clone()))
+        .unwrap();
+    repo.create_branch("branch2", Some(first_commit.clone()))
+        .unwrap();
+
+    // Switch to branch1 and make changes
+    repo.checkout("branch1").unwrap();
+    fs::write(&test_file, "Branch1 content").unwrap();
+    let branch1_commit = repo.create_commit("Branch1 commit").unwrap();
+
+    // Switch to branch2 and make changes
+    repo.checkout("branch2").unwrap();
+    fs::write(&test_file, "Branch2 content").unwrap();
+    let branch2_commit = repo.create_commit("Branch2 commit").unwrap();
+
+    // Find merge base between branch1 and branch2
+    let merge_base = repo
+        .get_merge_base(&branch1_commit, &branch2_commit)
+        .unwrap();
+    assert_eq!(merge_base, first_commit);
+}
+
+#[test]
+fn test_get_merge_base_same_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit = repo.create_commit("First commit").unwrap();
+
+    // Find merge base between same commit
+    let merge_base = repo.get_merge_base(&commit, &commit).unwrap();
+    assert_eq!(merge_base, commit);
+}
+
+#[test]
+fn test_get_merge_base_ancestor() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Find merge base between first and second commit
+    let merge_base = repo.get_merge_base(&first_commit, &second_commit).unwrap();
+    assert_eq!(merge_base, first_commit);
+}
+
+#[test]
+fn test_get_merge_base_invalid_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit = repo.create_commit("First commit").unwrap();
+
+    // Try to find merge base with invalid commit
+    let result = repo.get_merge_base(&commit, "invalidhash");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
+}
+
+#[test]
+fn test_get_merge_base_different_branches() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout branch1
+    repo.create_branch("branch1", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("branch1").unwrap();
+
+    // Make changes and commit in branch1
+    fs::write(&test_file, "Branch1 content").unwrap();
+    let commit1 = repo.create_commit("Branch1 commit").unwrap();
+
+    // Create and checkout branch2
+    repo.create_branch("branch2", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("branch2").unwrap();
+
+    // Make changes and commit in branch2
+    fs::write(&test_file, "Branch2 content").unwrap();
+    let commit2 = repo.create_commit("Branch2 commit").unwrap();
+
+    // Find merge base between the two commits
+    let merge_base = repo.get_merge_base(&commit1, &commit2).unwrap();
+    assert_eq!(merge_base, initial_commit);
+}

@@ -1112,4 +1112,55 @@ impl Repository {
         let colored_diff = Differ::colorize_diff(&diff);
         Ok(colored_diff)
     }
+
+    pub fn get_merge_base(&self, commit_hash1: &str, commit_hash2: &str) -> Result<String, String> {
+        // Validate both commit hashes
+        let commit1 = self.get_oid_hash(commit_hash1)?;
+        let commit2 = self.get_oid_hash(commit_hash2)?;
+
+        // If commits are the same, return that commit
+        if commit1 == commit2 {
+            return Ok(commit1);
+        }
+
+        // Get all ancestors of both commits
+        let ancestors1 = self.get_commit_ancestors(&commit1)?;
+        let ancestors2 = self.get_commit_ancestors(&commit2)?;
+
+        // Find the first common ancestor
+        for ancestor in &ancestors1 {
+            if ancestors2.contains(ancestor) {
+                return Ok(ancestor.clone());
+            }
+        }
+
+        // If no common ancestor is found, return an error
+        Err("No common ancestor found between commits".to_string())
+    }
+
+    fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
+        let mut ancestors = Vec::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(commit_hash.to_string());
+
+        while let Some(current) = queue.pop_front() {
+            // Skip if we've already processed this commit
+            if ancestors.contains(&current) {
+                continue;
+            }
+
+            // Add current commit to ancestors
+            ancestors.push(current.clone());
+
+            // Get the commit object
+            let commit = self.get_commit(&current)?;
+
+            // Add all parents to the queue
+            for parent in commit.parents {
+                queue.push_back(parent);
+            }
+        }
+
+        Ok(ancestors)
+    }
 }
