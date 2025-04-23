@@ -156,4 +156,63 @@ impl<'a> Differ<'a> {
 
         colored
     }
+
+    pub fn merge_trees(
+        &self,
+        t_head: &str,
+        t_other: &str,
+    ) -> Result<HashMap<String, Vec<u8>>, String> {
+        let mut tree = HashMap::new();
+
+        let entries = self.compare_trees(&[t_head, t_other])?;
+
+        for (path, oids) in entries {
+            let merged = self.merge_blobs(oids[0].as_deref(), oids[1].as_deref())?;
+            tree.insert(path, merged);
+        }
+
+        Ok(tree)
+    }
+
+    pub fn merge_blobs(
+        &self,
+        o_head: Option<&str>,
+        o_other: Option<&str>,
+    ) -> Result<Vec<u8>, String> {
+        let mut head_file =
+            NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+        let mut other_file =
+            NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+        if let Some(oid) = o_head {
+            let content = self.repo.get_object(oid)?;
+            head_file
+                .write_all(&content)
+                .map_err(|e| format!("Failed to write to temp file: {}", e))?;
+        }
+        if let Some(oid) = o_other {
+            let content = self.repo.get_object(oid)?;
+            other_file
+                .write_all(&content)
+                .map_err(|e| format!("Failed to write to temp file: {}", e))?;
+        }
+
+        head_file
+            .flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+        other_file
+            .flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+
+        let output = Command::new("diff")
+            .args([
+                "-DHEAD",
+                head_file.path().to_str().unwrap(),
+                other_file.path().to_str().unwrap(),
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run diff command: {}", e))?;
+
+        Ok(output.stdout)
+    }
 }

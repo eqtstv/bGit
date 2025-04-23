@@ -979,12 +979,52 @@ impl Repository {
     }
 
     pub fn merge(&self, branch_name: &str) -> Result<(), String> {
-        // TODO: Implement merge
-        println!("Merging branch {}", branch_name);
+        // Get refs
+        let head_ref = self.get_ref(HEAD, true).unwrap();
+        let branch_ref = self.get_ref(branch_name, true).unwrap();
 
-        // TODO: remove this
-        let current_branch = self.get_branch_name()?;
-        self.delete_ref(current_branch.as_ref().unwrap(), false)?;
+        // Get head commits
+        let curr_head_commit = self.get_commit(&head_ref.value).unwrap();
+        let branch_head_commit = self.get_commit(&branch_ref.value).unwrap();
+
+        // Merge the trees
+        self.read_tree_merged(&curr_head_commit.tree, &branch_head_commit.tree)?;
+
+        println!(
+            "Successfully merged branch: {} into current branch",
+            branch_name
+        );
+
+        Ok(())
+    }
+
+    pub fn read_tree_merged(
+        &self,
+        head_tree_oid: &str,
+        other_tree_oid: &str,
+    ) -> Result<(), String> {
+        // Empty the current directory
+        self.empty_current_directory(Path::new(&self.worktree))?;
+
+        // Get the merged tree contents
+        let differ = Differ::new(self);
+        let merged_tree = differ.merge_trees(head_tree_oid, other_tree_oid)?;
+
+        // Write each file to the working directory
+        for (path, content) in merged_tree {
+            let full_path = Path::new(&self.worktree).join(&path);
+
+            // Create parent directories if they don't exist
+            if let Some(parent) = full_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!("Failed to create directory {}: {}", parent.display(), e)
+                })?;
+            }
+
+            // Write the file
+            std::fs::write(&full_path, content)
+                .map_err(|e| format!("Failed to write file {}: {}", full_path.display(), e))?;
+        }
 
         Ok(())
     }

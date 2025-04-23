@@ -323,3 +323,89 @@ fn test_diff_subdirectory_changes() {
     assert!(diff.contains("+++ b/subdir/new.txt"));
     assert!(diff.contains("+New file"));
 }
+
+#[test]
+fn test_merge_trees_simple_add_new_line() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file and commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify file and commit
+    fs::write(&test_file, "Initial content\nNew line added").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content contains both versions with proper merge markers
+    let merged_content = String::from_utf8_lossy(&merged["test.txt"]);
+    let expected = "#ifndef HEAD\nInitial content\n\\ No newline at end of file\n#else /* HEAD */\nInitial content\nNew line added\n\\ No newline at end of file\n#endif /* HEAD */\n";
+    assert_eq!(merged_content, expected);
+}
+
+#[test]
+fn test_merge_trees_python_code() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file and commit
+    let test_file = temp_dir.path().join("main.py");
+    let initial_content = r#"
+        def main():
+            print("This function is cool")
+            print("It prints stuff")
+            print("It can even return a number:")
+            return 7
+"#;
+    fs::write(&test_file, initial_content).unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify file and commit
+    let modified_content = r#"
+        def main():
+            print("1 + 1 = 2")
+            print("This function is cool")
+            print("It prints stuff")
+"#;
+    fs::write(&test_file, modified_content).unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .unwrap();
+
+    // Verify merged content contains both versions with proper merge markers
+    let merged_content = String::from_utf8_lossy(&merged["main.py"]);
+    let expected = r#"def main():
+#ifdef HEAD
+            print("1 + 1 = 2")
+#endif /* HEAD */
+            print("This function is cool")
+            print("It prints stuff")
+#ifndef HEAD
+            print("It can even return a number:")
+            return 7
+#endif /* HEAD */"#;
+    assert_eq!(merged_content.trim(), expected);
+}
