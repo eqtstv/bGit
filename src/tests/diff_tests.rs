@@ -483,8 +483,10 @@ fn test_merge_trees_added_removed_files() {
     assert!(merged.contains_key("file1.txt")); // Removed file should be marked as deleted
     assert!(merged.contains_key("file2.txt")); // Unchanged file should be present
     assert!(merged.contains_key("file3.txt")); // New file should be present
+    let file1_content = String::from_utf8_lossy(&merged["file1.txt"]);
     let file2_content = String::from_utf8_lossy(&merged["file2.txt"]);
     let file3_content = String::from_utf8_lossy(&merged["file3.txt"]);
+    assert!(file1_content.contains("No newline at end of file"));
     assert!(file2_content.contains("File 2 content"));
     assert!(file3_content.contains("File 3 content"));
 }
