@@ -1030,7 +1030,7 @@ impl Repository {
         self.delete_ref(MERGE_HEAD, false)?;
 
         println!(
-            "Successfully merged branch: {} into current branch",
+            "Successfully merged branch: {} into current branch.\nPlease commit the merge.",
             branch_name
         );
 
