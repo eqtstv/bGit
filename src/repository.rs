@@ -1012,8 +1012,16 @@ impl Repository {
             false,
         )?;
 
+        let base_commit = self
+            .get_commit(&self.get_merge_base(&curr_head_commit.tree, &branch_head_commit.tree)?)
+            .unwrap();
+
         // Merge the trees
-        self.read_tree_merged(&curr_head_commit.tree, &branch_head_commit.tree)?;
+        self.read_tree_merged(
+            &curr_head_commit.tree,
+            &branch_head_commit.tree,
+            Some(&base_commit.tree),
+        )?;
 
         println!(
             "Successfully merged branch: {} into current branch",
@@ -1027,13 +1035,14 @@ impl Repository {
         &self,
         head_tree_oid: &str,
         other_tree_oid: &str,
+        base_tree_oid: Option<&str>,
     ) -> Result<(), String> {
         // Empty the current directory
         self.empty_current_directory(Path::new(&self.worktree))?;
 
         // Get the merged tree contents
         let differ = Differ::new(self);
-        let merged_tree = differ.merge_trees(head_tree_oid, other_tree_oid)?;
+        let merged_tree = differ.merge_trees(head_tree_oid, other_tree_oid, base_tree_oid)?;
 
         // Write each file to the working directory
         for (path, content) in merged_tree {

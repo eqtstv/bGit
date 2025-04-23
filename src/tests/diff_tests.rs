@@ -347,7 +347,7 @@ fn test_merge_trees_simple_add_new_line() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content contains both versions with proper merge markers
@@ -392,7 +392,7 @@ fn test_merge_trees_python_code() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content contains both versions with proper merge markers
@@ -407,6 +407,61 @@ fn test_merge_trees_python_code() {
             print("It can even return a number:")
             return 7
 #endif /* HEAD */"#;
+    assert_eq!(merged_content.trim(), expected);
+}
+
+#[test]
+fn test_merge_trees_python_code_three_way() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file and commit
+    let test_file = temp_dir.path().join("main.py");
+    let initial_content = r#"
+        def main():
+            print("This function is cool")
+            print("It prints stuff")
+            print("It can even return a number:")
+            return 7
+"#;
+    fs::write(&test_file, initial_content).unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Modify file and commit
+    let modified_content = r#"
+        def main():
+            print("1 + 1 = 2")
+            print("This function is cool")
+            print("It prints stuff")
+"#;
+    fs::write(&test_file, modified_content).unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Get commits
+    let first_commit_obj = repo.get_commit(&first_commit).unwrap();
+    let second_commit_obj = repo.get_commit(&second_commit).unwrap();
+    let base_commit_obj = repo
+        .get_commit(&repo.get_merge_base(&first_commit, &second_commit).unwrap())
+        .unwrap();
+
+    // Create differ and merge trees
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(
+            &first_commit_obj.tree,
+            &second_commit_obj.tree,
+            Some(&base_commit_obj.tree),
+        )
+        .unwrap();
+
+    // Verify merged content contains both versions with proper merge markers
+    let merged_content = String::from_utf8_lossy(&merged["main.py"]);
+    let expected = r#"def main():
+            print("1 + 1 = 2")
+            print("This function is cool")
+            print("It prints stuff")"#;
     assert_eq!(merged_content.trim(), expected);
 }
 
@@ -436,7 +491,7 @@ fn test_merge_trees_multiple_files() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content for both files
@@ -476,7 +531,7 @@ fn test_merge_trees_added_removed_files() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content
@@ -514,7 +569,7 @@ fn test_merge_trees_empty_files() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content
@@ -549,7 +604,7 @@ fn test_merge_trees_subdirectories() {
     // Create differ and merge trees
     let differ = Differ::new(&repo);
     let merged = differ
-        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree)
+        .merge_trees(&first_commit_obj.tree, &second_commit_obj.tree, None)
         .unwrap();
 
     // Verify merged content
@@ -558,4 +613,72 @@ fn test_merge_trees_subdirectories() {
     assert!(file_content.contains("Initial content"));
     assert!(file_content.contains("Modified content"));
     assert!(new_file_content.contains("New file content"));
+}
+
+#[test]
+fn test_merge_trees_three_way_merge() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial file with common ancestor content
+    let test_file = temp_dir.path().join("animals.py");
+    let common_ancestor = r#"def be_a_cat():
+    print("Meow")
+    return True
+
+def be_a_dog():
+    print("Bark!")
+    return False"#;
+    fs::write(&test_file, common_ancestor).unwrap();
+    let base_commit = repo.create_commit("Base commit").unwrap();
+
+    // Create version A (changes be_a_cat)
+    let version_a = r#"def be_a_cat():
+    print("Sleep")
+    return True
+
+def be_a_dog():
+    print("Bark!")
+    return False"#;
+    fs::write(&test_file, version_a).unwrap();
+    let commit_a = repo.create_commit("Version A commit").unwrap();
+
+    // Create version B (changes be_a_dog)
+    let version_b = r#"def be_a_cat():
+    print("Meow")
+    return True
+
+def be_a_dog():
+    print("Eat homework")
+    return False"#;
+    fs::write(&test_file, version_b).unwrap();
+    let commit_b = repo.create_commit("Version B commit").unwrap();
+
+    // Get commits
+    let base_commit_obj = repo.get_commit(&base_commit).unwrap();
+    let commit_a_obj = repo.get_commit(&commit_a).unwrap();
+    let commit_b_obj = repo.get_commit(&commit_b).unwrap();
+
+    // Create differ and merge trees using three-way merge
+    let differ = Differ::new(&repo);
+    let merged = differ
+        .merge_trees(
+            &commit_a_obj.tree,
+            &commit_b_obj.tree,
+            Some(&base_commit_obj.tree),
+        )
+        .unwrap();
+
+    // Verify merged content contains combined changes from both versions
+    let merged_content = String::from_utf8_lossy(&merged["animals.py"]);
+    let expected = r#"def be_a_cat():
+    print("Sleep")
+    return True
+
+def be_a_dog():
+    print("Eat homework")
+    return False"#;
+    assert_eq!(merged_content.trim(), expected);
 }
