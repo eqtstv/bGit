@@ -25,7 +25,7 @@ pub struct RefValue {
 pub struct Commit {
     pub _oid: String,
     pub tree: String,
-    pub parent: Option<String>,
+    pub parents: Vec<String>,
     pub timestamp: String,
     pub message: String,
 }
@@ -599,7 +599,7 @@ impl Repository {
 
         // Parse the commit data
         let mut tree = None;
-        let mut parent = None;
+        let mut parents = Vec::new();
         let mut timestamp = None;
         let mut message = String::new();
         let mut in_message = false;
@@ -619,7 +619,7 @@ impl Repository {
             if let Some(rest) = line.strip_prefix("tree ") {
                 tree = Some(rest.to_string());
             } else if let Some(rest) = line.strip_prefix("parent ") {
-                parent = Some(rest.to_string());
+                parents.push(rest.to_string());
             } else if let Some(rest) = line.strip_prefix("timestamp ") {
                 timestamp = Some(rest.to_string());
             }
@@ -635,7 +635,7 @@ impl Repository {
         Ok(Commit {
             _oid: hash,
             tree,
-            parent,
+            parents,
             timestamp,
             message,
         })
@@ -682,8 +682,10 @@ impl Repository {
             // Print commit information
             println!();
             println!("\x1b[33mcommit {}\x1b[0m", hash);
-            if let Some(parent) = &commit.parent {
-                println!("parent {}", parent);
+            if !commit.parents.is_empty() {
+                for parent in commit.parents {
+                    println!("parents {}", parent);
+                }
             }
             println!("tree {}", commit.tree);
             println!("Date:   {}", commit.timestamp);
@@ -870,8 +872,10 @@ impl Repository {
 
             let commit = self.get_commit(&oid_str)?;
 
-            if let Some(parent) = &commit.parent {
-                queue.push_back(parent.clone());
+            if !commit.parents.is_empty() {
+                for parent in commit.parents {
+                    queue.push_back(parent.clone());
+                }
             }
         }
 
@@ -1036,8 +1040,10 @@ impl Repository {
 
         println!("Commit: {}", commit_hash);
         println!("Tree: {}", commit.tree);
-        if let Some(parent) = &commit.parent {
-            println!("Parent: {}", parent);
+        if !commit.parents.is_empty() {
+            for parent in commit.parents {
+                println!("Parent: {}", parent);
+            }
         } else {
             println!("Parent: None");
         }
@@ -1054,14 +1060,16 @@ impl Repository {
 
         self.print_commit(commit_hash)?;
 
-        if let Some(parent) = &commit.parent {
-            let parent_commit = self
-                .get_commit(parent)
-                .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
+        if !commit.parents.is_empty() {
+            for parent in commit.parents {
+                let parent_commit = self
+                    .get_commit(&parent)
+                    .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
 
-            let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
-            let colored_diff = Differ::colorize_diff(&diff);
-            println!("{}", colored_diff);
+                let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
+                let colored_diff = Differ::colorize_diff(&diff);
+                println!("{}", colored_diff);
+            }
         }
 
         Ok(())

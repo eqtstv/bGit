@@ -695,7 +695,7 @@ fn test_get_commit() {
     // Get and verify commit
     let commit = repo.get_commit(&commit_hash).unwrap();
     assert_eq!(commit.message, commit_message);
-    assert!(commit.parent.is_none());
+    assert!(commit.parents.is_empty());
     assert!(!commit.timestamp.is_empty());
     assert!(!commit.tree.is_empty());
 
@@ -706,7 +706,7 @@ fn test_get_commit() {
     // Get and verify second commit
     let second_commit = repo.get_commit(&second_hash).unwrap();
     assert_eq!(second_commit.message, second_message);
-    assert_eq!(second_commit.parent.unwrap(), commit_hash);
+    assert_eq!(second_commit.parents[0], commit_hash);
     assert!(!second_commit.timestamp.is_empty());
     assert!(!second_commit.tree.is_empty());
 
@@ -749,15 +749,15 @@ fn test_log() {
     // Verify commit data
     let third_commit = repo.get_commit(&third_hash).unwrap();
     assert_eq!(third_commit.message, third_message);
-    assert_eq!(third_commit.parent.unwrap(), second_hash);
+    assert_eq!(third_commit.parents, vec![second_hash.clone()]);
 
     let second_commit = repo.get_commit(&second_hash).unwrap();
     assert_eq!(second_commit.message, second_message);
-    assert_eq!(second_commit.parent.unwrap(), first_hash);
+    assert_eq!(second_commit.parents, vec![first_hash.clone()]);
 
     let first_commit = repo.get_commit(&first_hash).unwrap();
     assert_eq!(first_commit.message, first_message);
-    assert!(first_commit.parent.is_none());
+    assert!(first_commit.parents.is_empty());
 }
 
 #[test]
@@ -1080,7 +1080,7 @@ fn test_first_commit_handling() {
 
     // Verify commit has no parent
     let commit = repo.get_commit(&commit_hash).unwrap();
-    assert!(commit.parent.is_none());
+    assert!(commit.parents.is_empty());
     assert!(!commit.tree.is_empty());
 
     // Verify log works now
@@ -1128,7 +1128,7 @@ fn test_empty_to_committed_transition() {
 
     // Verify second commit has first commit as parent
     let second_commit = repo.get_commit(&second_commit_hash).unwrap();
-    assert_eq!(second_commit.parent.unwrap(), first_commit_hash);
+    assert_eq!(second_commit.parents, vec![first_commit_hash.clone()]);
 }
 
 #[test]

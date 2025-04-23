@@ -100,12 +100,14 @@ impl Visualizer {
         // Add edges for parent relationships
         for commit_hash in &commits {
             let commit = self.repo.get_commit(commit_hash)?;
-            if let Some(parent) = &commit.parent {
-                let from_id = format!("\"{}\"", commit_hash);
-                let to_id = format!("\"{}\"", parent);
-                graph.add_stmt(Stmt::Edge(edge!(node_id!(from_id) => node_id!(to_id);
-                    attr!("arrowhead", "normal")
-                )));
+            if !commit.parents.is_empty() {
+                for parent in commit.parents {
+                    let from_id = format!("\"{}\"", commit_hash);
+                    let to_id = format!("\"{}\"", parent);
+                    graph.add_stmt(Stmt::Edge(edge!(node_id!(from_id) => node_id!(to_id);
+                        attr!("arrowhead", "normal")
+                    )));
+                }
             }
         }
 
