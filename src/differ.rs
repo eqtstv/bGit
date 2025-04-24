@@ -62,10 +62,8 @@ impl<'a> Differ<'a> {
                     .or_insert_with(|| (obj_type.clone(), vec![None; num_trees]));
 
                 // Type conflict resolution (prefer Tree)
-                if *entry_type != obj_type {
-                    if obj_type == ObjectType::Tree {
-                        *entry_type = ObjectType::Tree;
-                    } // else keep existing type (e.g. if existing was Tree)
+                if *entry_type != obj_type && obj_type == ObjectType::Tree {
+                    *entry_type = ObjectType::Tree;
                 }
 
                 // Update OID for the current tree index
@@ -105,9 +103,12 @@ impl<'a> Differ<'a> {
 
         for (path, obj_type, oids) in entries {
             if obj_type == ObjectType::Blob
-                && oids.get(0).unwrap_or(&None) != oids.get(1).unwrap_or(&None)
+                && oids.first().unwrap_or(&None) != oids.get(1).unwrap_or(&None)
             {
-                let diff = self.diff_blobs(oids[0].as_deref(), oids[1].as_deref(), &path)?;
+                // Correctly get Option<&str> for diff_blobs
+                let oid1 = oids.first().unwrap_or(&None).as_deref();
+                let oid2 = oids.get(1).unwrap_or(&None).as_deref();
+                let diff = self.diff_blobs(oid1, oid2, &path)?;
                 output.extend_from_slice(&diff);
             }
         }
@@ -187,12 +188,12 @@ impl<'a> Differ<'a> {
             .into_iter()
             // Filter where OID at index 0 (worktree) differs from index 1 (HEAD)
             .filter(|(_path, _obj_type, oids)| {
-                oids.get(0).unwrap_or(&None) != oids.get(1).unwrap_or(&None)
+                oids.first().unwrap_or(&None) != oids.get(1).unwrap_or(&None)
             })
             .map(|(path, _obj_type, oids)| {
                 // Correctly destructure tuple
                 // Determine status based on presence/absence of OIDs
-                match (oids.get(0).unwrap_or(&None), oids.get(1).unwrap_or(&None)) {
+                match (oids.first().unwrap_or(&None), oids.get(1).unwrap_or(&None)) {
                     (Some(_), None) => format!("\x1b[32m{}[0m", path), // Added
                     (None, Some(_)) => format!("\x1b[31m{}[0m", path), // Deleted
                     (Some(_), Some(_)) => format!("\x1b[33m{}[0m", path), // Modified
@@ -239,7 +240,7 @@ impl<'a> Differ<'a> {
         let entries = self.compare_trees(&[base, t_head, t_other])?;
 
         for (path, obj_type, oids) in entries {
-            let base_oid = oids.get(0).unwrap_or(&None);
+            let base_oid = oids.first().unwrap_or(&None);
             let head_oid = oids.get(1).unwrap_or(&None);
             let other_oid = oids.get(2).unwrap_or(&None);
 
@@ -264,6 +265,9 @@ impl<'a> Differ<'a> {
                 }
                 ObjectType::Tree => {
                     // Handle trees: check existence
+                    let base_oid = oids.first().unwrap_or(&None);
+                    let head_oid = oids.get(1).unwrap_or(&None);
+                    let other_oid = oids.get(2).unwrap_or(&None);
                     // Keep directory if it exists in head or other, *unless* it was
                     // present in base but deleted in *both* head and other.
                     if base_oid.is_some() && head_oid.is_none() && other_oid.is_none() {
@@ -293,43 +297,12 @@ impl<'a> Differ<'a> {
         o_head: Option<&str>,
         o_other: Option<&str>,
     ) -> Result<Vec<u8>, String> {
-        // If all OIDs are the same, just return the content
-        if o_base == o_head && o_head == o_other {
-            if let Some(oid) = o_base {
-                // Optimization: Avoid reading if OID is known empty hash or similar
-                // For now, just read the object.
-                return self.repo.get_object(oid);
-            }
-            return Ok(Vec::new()); // All are None or empty
-        }
-
-        // If head and other are the same, return that content
-        if o_head == o_other {
-            if let Some(oid) = o_head {
-                return self.repo.get_object(oid);
-            }
+        // Handle the trivial case where all inputs are None
+        if o_base.is_none() && o_head.is_none() && o_other.is_none() {
             return Ok(Vec::new());
         }
 
-        // If base and head are the same, return other's content (other changed)
-        if o_base == o_head {
-            if let Some(oid) = o_other {
-                return self.repo.get_object(oid);
-            }
-            return Ok(Vec::new()); // Other deleted it
-        }
-
-        // If base and other are the same, return head's content (head changed)
-        if o_base == o_other {
-            if let Some(oid) = o_head {
-                return self.repo.get_object(oid);
-            }
-            return Ok(Vec::new()); // Head deleted it
-        }
-
-        // --- Conflict case or independent changes ---
-        // Get content from all three versions
-        // Using unwrap_or_default which is concise for Option<String> -> Vec<u8>
+        // Get content or empty vec
         let base_content = match o_base {
             Some(oid) => self.repo.get_object(oid)?,
             None => Vec::new(),
@@ -343,42 +316,24 @@ impl<'a> Differ<'a> {
             None => Vec::new(),
         };
 
-        // Perform line-based merge (simple version: mark conflicts)
-        // A more robust implementation would use diff3 or similar.
-        // This basic example favors 'head' in case of direct conflict on the same line.
-        let mut base_file = NamedTempFile::new()
-            .map_err(|e| format!("Failed to create temp file (base): {}", e))?;
-        let mut head_file = NamedTempFile::new()
-            .map_err(|e| format!("Failed to create temp file (head): {}", e))?;
-        let mut other_file = NamedTempFile::new()
-            .map_err(|e| format!("Failed to create temp file (other): {}", e))?;
+        // Use helper function to create temp files
+        let base_file = self.create_temp_file_with_content(&base_content, "base")?;
+        let head_file = self.create_temp_file_with_content(&head_content, "head")?;
+        let other_file = self.create_temp_file_with_content(&other_content, "other")?;
 
-        base_file
-            .write_all(&base_content)
-            .map_err(|e| format!("Failed to write temp file (base): {}", e))?;
-        head_file
-            .write_all(&head_content)
-            .map_err(|e| format!("Failed to write temp file (head): {}", e))?;
-        other_file
-            .write_all(&other_content)
-            .map_err(|e| format!("Failed to write temp file (other): {}", e))?;
-
-        base_file
-            .flush()
-            .map_err(|e| format!("Failed to flush temp file (base): {}", e))?;
-        head_file
-            .flush()
-            .map_err(|e| format!("Failed to flush temp file (head): {}", e))?;
-        other_file
-            .flush()
-            .map_err(|e| format!("Failed to flush temp file (other): {}", e))?;
-
+        // Call diff3 without labels
         let output = Command::new("diff3")
             .args([
-                "-m",                                // Merge output with conflict markers
-                head_file.path().to_str().unwrap(),  // My file
-                base_file.path().to_str().unwrap(),  // Older file
-                other_file.path().to_str().unwrap(), // Your file
+                "-m", // Merge output with conflict markers
+                "-L",
+                "HEAD",                             // Label for HEAD version
+                head_file.path().to_str().unwrap(), // My file (HEAD)
+                "-L",
+                "BASE",                             // Label for BASE version
+                base_file.path().to_str().unwrap(), // Older file (BASE)
+                "-L",
+                "MERGE_HEAD",                        // Label for OTHER version
+                other_file.path().to_str().unwrap(), // Your file (OTHER)
             ])
             .output()
             .map_err(|e| {
@@ -388,23 +343,34 @@ impl<'a> Differ<'a> {
                 )
             })?;
 
-        // diff3 returns non-zero status for conflicts. We consider conflicts part of the merge result.
-        // So we take stdout regardless of status code, unless the command failed to run.
-        Ok(output.stdout)
+        // diff3 returns status 1 for conflicts, 0 for success.
+        // We accept both as valid merge results (stdout contains markers on conflict).
+        // Status > 1 indicates an error.
+        if output.status.success() || output.status.code() == Some(1) {
+            Ok(output.stdout)
+        } else {
+            Err(format!(
+                "diff3 command failed with status {:?}: {}",
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        }
+    }
 
-        // --- Previous Manual Line-Based Merge (Less Robust) ---
-        // let base_lines: Vec<&str> = base_str.lines().collect();
-        // let head_lines: Vec<&str> = head_str.lines().collect();
-        // let other_lines: Vec<&str> = other_str.lines().collect();
-        // // Simple merge: prefer head if conflict
-        // let mut merged = Vec::new();
-        // // This logic needs a proper diff algorithm (LCS) for correct merging
-        // // For now, just concatenate head and other as a placeholder for conflict
-        // merged.extend_from_slice(b"<<<<<<< HEAD\n");
-        // merged.extend_from_slice(&head_content);
-        // merged.extend_from_slice(b"\n=======\n");
-        // merged.extend_from_slice(&other_content);
-        // merged.extend_from_slice(b"\n>>>>>>> OTHER\n");
-        // Ok(merged)
+    // Helper function to create, write, and flush a temp file
+    fn create_temp_file_with_content(
+        &self,
+        content: &[u8],
+        label: &str, // For error messages
+    ) -> Result<NamedTempFile, String> {
+        let mut temp_file = NamedTempFile::new()
+            .map_err(|e| format!("Failed to create temp file ({}): {}", label, e))?;
+        temp_file
+            .write_all(content)
+            .map_err(|e| format!("Failed to write temp file ({}): {}", label, e))?;
+        temp_file
+            .flush()
+            .map_err(|e| format!("Failed to flush temp file ({}): {}", label, e))?;
+        Ok(temp_file)
     }
 }

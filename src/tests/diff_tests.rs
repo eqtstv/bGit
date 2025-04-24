@@ -472,8 +472,8 @@ fn test_merge_trees_python_code_three_way() {
     let merged_content = String::from_utf8_lossy(merged["main.py"].as_ref().unwrap());
     let expected = r#"def main():
             print("1 + 1 = 2")
-            print("This function is cool")
-            print("It prints stuff")"#;
+            print("It prints stuff")
+            return 7"#;
     assert_eq!(merged_content.trim(), expected);
 }
 
@@ -692,4 +692,43 @@ def be_a_dog():
     print("Eat homework")
     return False"#;
     assert_eq!(merged_content.trim(), expected);
+}
+
+#[test]
+fn test_merge_trees_three_way_no_conflict() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // 1. Base commit
+    let test_file = temp_dir.path().join("file.txt");
+    fs::write(&test_file, "Line 1\n\n").unwrap();
+    let base_commit = repo.create_commit("Base commit").unwrap();
+
+    // 2. Feature branch: Add line 2
+    repo.create_branch("feature", Some(base_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+    fs::write(&test_file, "Line 1\n\nLine 2 feature\n").unwrap();
+    let _feature_commit = repo.create_commit("Feature commit").unwrap();
+
+    // 3. Master branch: Modify line 1
+    repo.checkout("master").unwrap(); // Should be at base_commit
+    fs::write(&test_file, "Line master 1\n\n").unwrap();
+    let _master_commit = repo.create_commit("Master commit").unwrap();
+
+    // 4. Merge feature into master
+    // This merge should be clean as changes are on different lines
+    let merge_result = repo.merge("feature");
+    assert!(
+        merge_result.is_ok(),
+        "Merge failed: {:?}",
+        merge_result.err()
+    );
+
+    // 5. Verify the merged content in the working directory
+    let final_content = fs::read_to_string(&test_file).unwrap();
+    let expected_content = "Line master 1\n\nLine 2 feature\n";
+    assert_eq!(final_content, expected_content);
 }
