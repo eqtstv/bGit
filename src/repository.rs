@@ -1003,7 +1003,33 @@ impl Repository {
         // Get head commits
         let curr_head_commit = self.get_commit(&head_ref.value).unwrap();
         let branch_head_commit = self.get_commit(&branch_ref.value).unwrap();
+        let base_commit = self
+            .get_commit(&self.get_merge_base(&curr_head_commit._oid, &branch_head_commit._oid)?)
+            .unwrap();
 
+        // Check if we can do a fast-forward merge
+        // If the base commit is the same as the current HEAD, we can do a fast-forward merge
+        if base_commit._oid == curr_head_commit._oid {
+            // Update the working directory to match the branch head commit
+            self.read_tree(&branch_head_commit.tree, Path::new(&self.worktree))?;
+
+            // Update the HEAD to point to the branch head commit
+            self.set_ref(
+                HEAD,
+                RefValue {
+                    value: branch_ref.value,
+                    is_symbolic: false,
+                },
+                false,
+            )?;
+            println!(
+                "Successfully merged branch {} into current branch.\nFast-forward merge, no need to commit.",
+                branch_name
+            );
+            return Ok(());
+        }
+
+        // If not a fast-forward merge, proceed with three-way merge
         // Set MERGE_HEAD
         self.set_ref(
             MERGE_HEAD,
@@ -1013,10 +1039,6 @@ impl Repository {
             },
             false,
         )?;
-
-        let base_commit = self
-            .get_commit(&self.get_merge_base(&curr_head_commit._oid, &branch_head_commit._oid)?)
-            .unwrap();
 
         // Merge the trees
         self.read_tree_merged(
@@ -1028,6 +1050,11 @@ impl Repository {
         // TODO: Remove this later?
         // Remove MERGE_HEAD after successful merge
         self.delete_ref(MERGE_HEAD, false)?;
+
+        println!(
+            "Successfully merged branch {} into current branch.\nPlease commit the merge.",
+            branch_name
+        );
 
         Ok(())
     }

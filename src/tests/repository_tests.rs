@@ -2355,3 +2355,127 @@ fn test_merge_complex_structure() {
     assert!(temp_dir.path().join("tests/unit").is_dir());
     assert!(temp_dir.path().join("docs/api").is_dir());
 }
+
+#[test]
+fn test_merge_fast_forward() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+
+    assert_eq!(file1_content, "feature content");
+    assert_eq!(file2_content, "new file in feature");
+
+    // Verify HEAD points to the feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, feature_commit);
+}
+
+#[test]
+fn test_merge_fast_forward_with_multiple_commits() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make multiple commits in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content 1").unwrap();
+    let _commit1 = repo.create_commit("Feature commit 1").unwrap();
+
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    let _commit2 = repo.create_commit("Feature commit 2").unwrap();
+
+    fs::write(temp_dir.path().join("file3.txt"), "another new file").unwrap();
+    let final_commit = repo.create_commit("Feature commit 3").unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+    let file3_content = fs::read_to_string(temp_dir.path().join("file3.txt")).unwrap();
+
+    assert_eq!(file1_content, "feature content 1");
+    assert_eq!(file2_content, "new file in feature");
+    assert_eq!(file3_content, "another new file");
+
+    // Verify HEAD points to the final feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, final_commit);
+}
+
+#[test]
+fn test_merge_fast_forward_with_deleted_files() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with multiple files
+    fs::write(temp_dir.path().join("file1.txt"), "initial content 1").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "initial content 2").unwrap();
+    fs::write(temp_dir.path().join("file3.txt"), "initial content 3").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Delete some files and modify others in feature branch
+    fs::remove_file(temp_dir.path().join("file2.txt")).unwrap();
+    fs::write(temp_dir.path().join("file1.txt"), "modified content").unwrap();
+    let feature_commit = repo
+        .create_commit("Feature changes with deletions")
+        .unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    assert_eq!(file1_content, "modified content");
+    assert!(!temp_dir.path().join("file2.txt").exists());
+    assert!(temp_dir.path().join("file3.txt").exists());
+
+    // Verify HEAD points to the feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, feature_commit);
+}
