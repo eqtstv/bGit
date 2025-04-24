@@ -1029,11 +1029,6 @@ impl Repository {
         // Remove MERGE_HEAD after successful merge
         self.delete_ref(MERGE_HEAD, false)?;
 
-        println!(
-            "Successfully merged branch: {} into current branch.\nPlease commit the merge.",
-            branch_name
-        );
-
         Ok(())
     }
 

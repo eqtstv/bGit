@@ -191,7 +191,7 @@ fn main() {
         },
         Command::Merge(branch_name) => match repo.merge(&branch_name) {
             Ok(_) => println!(
-                "Successfully merged branch {} into current branch",
+                "Successfully merged branch {} into current branch.\nPlease commit the merge.",
                 branch_name
             ),
             Err(e) => {
