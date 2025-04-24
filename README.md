@@ -1,7 +1,5 @@
 # bGit - A Git Implementation in Rust
 
-[![CI](https://github.com/wojciechk/bGit/actions/workflows/ci.yaml/badge.svg)](https://github.com/wojciechk/bGit/actions/workflows/ci.yaml)
-
 `bGit` is a learning project implementing core concepts of the Git version control system using the Rust programming language. It aims to provide a functional subset of Git's features, focusing on understanding the underlying object model and commands.
 
 ## Core Concepts Implemented
