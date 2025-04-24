@@ -1,6 +1,6 @@
 # bGit - A Git Implementation in Rust
 
-`bGit` is a learning project implementing core concepts of the Git version control system using the Rust programming language. It aims to provide a functional subset of Git's features, focusing on understanding the underlying object model and commands.
+`bGit` is a Git implementation written in Rust. It provides a functional subset of Git's features, focusing on the core object model and essential commands.
 
 ## Core Concepts Implemented
 
@@ -49,95 +49,96 @@ cargo run -- commit "Add initial file"
 
 The following commands are available:
 
-- `init`
+- **`init`**
 
   - Initializes a new, empty bGit repository in the current directory by creating the `.bgit` structure.
   - Usage: `cargo run -- init`
 
-- `hash-object <file_path>`
+- **`hash-object <file_path>`**
 
   - Reads the content of the specified file, creates a blob object, stores it in the object database (`.bgit/objects`), and prints the resulting SHA-1 hash.
   - Usage: `cargo run -- hash-object path/to/your/file.txt`
 
-- `cat-file <object_hash>`
+- **`cat-file <object_hash>`**
 
   - Retrieves and prints the content of a Git object (blob, tree, or commit) given its SHA-1 hash.
   - Usage: `cargo run -- cat-file <sha1_hash>`
 
-- `write-tree`
+- **`write-tree`**
 
   - Creates a tree object representing the current state of the working directory (respecting `.bgitignore`), stores it, and prints its SHA-1 hash.
   - Usage: `cargo run -- write-tree`
 
-- `read-tree <tree_hash>`
+- **`read-tree <tree_hash>`**
 
   - Reads the tree object specified by `<tree_hash>` and updates the working directory to match the state represented by that tree. Warning: This overwrites uncommitted changes.
   - Usage: `cargo run -- read-tree <tree_sha1_hash>`
 
-- `get-tree <tree_hash>`
+- **`get-tree <tree_hash>`**
 
   - Retrieves and prints the formatted entries (mode, type, name, hash) of a tree object.
   - Usage: `cargo run -- get-tree <tree_sha1_hash>`
 
-- `commit <message>`
+- **`commit <message>`**
 
   - Creates a new commit object. It generates a tree from the current working directory, finds the current HEAD commit to use as a parent, and combines them with the provided commit message and timestamp. Prints the new commit hash.
   - Usage: `cargo run -- commit "Your descriptive commit message"`
 
-- `log`
+- **`log`**
 
   - Displays the commit history starting from the current HEAD, showing commit hashes, parents, dates, and messages.
   - Usage: `cargo run -- log`
 
-- `checkout <commit_or_branch>`
+- **`checkout <commit_or_branch>`**
 
   - Updates the working directory to match the state of the specified commit hash or branch name. Updates the HEAD pointer accordingly.
   - Usage (commit): `cargo run -- checkout <commit_sha1_hash>`
   - Usage (branch): `cargo run -- checkout <branch_name>`
 
-- `tag <tag_name> <commit_hash>`
+- **`tag <tag_name> <commit_hash>`**
 
   - Creates a tag (a reference in `refs/tags/`) pointing to the specified commit hash.
   - Usage: `cargo run -- tag v1.0 <commit_sha1_hash>`
 
-- `branch [branch_name]`
+- **`branch [branch_name]`**
 
   - With no argument: Lists all local branches, highlighting the current one.
   - With `<branch_name>`: Creates a new branch pointing to the current HEAD commit.
   - Usage (list): `cargo run -- branch`
   - Usage (create): `cargo run -- branch <new_branch_name>`
 
-- `status`
+- **`status`**
 
   - Shows the status of the working directory - changed files, untracked files etc.
   - Usage: `cargo run -- status`
 
-- `reset <commit_hash>`
+- **`reset <commit_hash>`**
 
   - Resets the current branch HEAD to the specified `<commit_hash>` and updates the working directory to match (hard reset behavior).
   - Usage: `cargo run -- reset <commit_sha1_hash>`
 
-- `show <commit_hash>`
+- **`show <commit_hash>`**
 
   - Displays information about a specific commit (metadata and diff against its parent(s)).
   - Usage: `cargo run -- show <commit_sha1_hash>`
 
-- `diff`
+- **`diff`**
 
   - Shows the differences between the current working directory and the HEAD commit.
   - Usage: `cargo run -- diff`
 
-- `merge <branch_name>`
+- **`merge <branch_name>`**
 
   - Performs a three-way merge of the specified `<branch_name>` into the current branch (HEAD). Uses the external `diff3` command. Creates merge commit parents if applicable.
   - Usage: `cargo run -- merge <other_branch_name>`
 
-- `iter-refs`
+- **`iter-refs`**
 
   - (Likely internal or debug command) Iterates and prints all references found in the `.bgit/refs` directory.
   - Usage: `cargo run -- iter-refs`
 
-- `visualize`
+- **`visualize`**
+
   - (Likely internal or debug command) Potentially generates a visualization of the commit graph.
   - Usage: `cargo run -- visualize`
 
