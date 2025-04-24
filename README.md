@@ -150,7 +150,7 @@ bgit/
 │   ├── cli.rs        # Command-line interface parsing
 │   ├── differ.rs     # Diffing and Merging logic
 │   ├── repository.rs # Core Git object model and repository operations
-│   ├── visualizer.rs # Commit graph visualization (if implemented)
+│   ├── visualizer.rs # Commit graph visualization
 │   └── main.rs       # Entry point, command dispatch
 ├── tests/            # Integration and unit tests
 │   └── ...
