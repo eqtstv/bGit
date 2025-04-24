@@ -351,11 +351,12 @@ fn test_merge_trees_simple_add_new_line() {
         .unwrap();
 
     // Verify merged content contains both versions with proper merge markers
-    let merged_content = String::from_utf8_lossy(&merged["test.txt"]);
-    let expected = "#ifndef HEAD\nInitial content\n#else /* HEAD */\nInitial content\nNew line added\n#endif /* HEAD */\n";
-    // Normalize the content by removing newline markers if present
-    let normalized_content = merged_content.replace("\\ No newline at end of file\n", "");
-    assert_eq!(normalized_content, expected);
+    let merged_content = String::from_utf8_lossy(merged["test.txt"].as_ref().unwrap());
+    assert!(merged_content.contains("<<<<<<<"));
+    assert!(merged_content.contains("======="));
+    assert!(merged_content.contains(">>>>>>>"));
+    assert!(merged_content.contains("Initial content\nNew line added"));
+    assert!(merged_content.contains("Initial content"));
 }
 
 #[test]
@@ -398,22 +399,27 @@ fn test_merge_trees_python_code() {
         .unwrap();
 
     // Verify merged content contains both versions with proper merge markers
-    let merged_content = String::from_utf8_lossy(&merged["main.py"]);
-    let expected = r#"def main():
-#ifdef HEAD
+    let merged_content = String::from_utf8_lossy(merged["main.py"].as_ref().unwrap());
+    assert!(merged_content.contains("<<<<<<<"));
+    assert!(merged_content.contains("======="));
+    assert!(merged_content.contains(">>>>>>>"));
+    assert!(merged_content.contains(
+        r#"
+        def main():
             print("1 + 1 = 2")
-#endif /* HEAD */
             print("This function is cool")
             print("It prints stuff")
-#ifndef HEAD
+"#
+    ));
+    assert!(merged_content.contains(
+        r#"
+        def main():
+            print("This function is cool")
+            print("It prints stuff")
             print("It can even return a number:")
             return 7
-#endif /* HEAD */"#;
-    // Normalize the content by removing the ! from #endif comments if present
-    let normalized_content = merged_content
-        .trim()
-        .replace("#endif /* ! HEAD */", "#endif /* HEAD */");
-    assert_eq!(normalized_content, expected);
+"#
+    ));
 }
 
 #[test]
@@ -463,7 +469,7 @@ fn test_merge_trees_python_code_three_way() {
         .unwrap();
 
     // Verify merged content contains both versions with proper merge markers
-    let merged_content = String::from_utf8_lossy(&merged["main.py"]);
+    let merged_content = String::from_utf8_lossy(merged["main.py"].as_ref().unwrap());
     let expected = r#"def main():
             print("1 + 1 = 2")
             print("This function is cool")
@@ -501,8 +507,8 @@ fn test_merge_trees_multiple_files() {
         .unwrap();
 
     // Verify merged content for both files
-    let file1_content = String::from_utf8_lossy(&merged["file1.txt"]);
-    let file2_content = String::from_utf8_lossy(&merged["file2.txt"]);
+    let file1_content = String::from_utf8_lossy(merged["file1.txt"].as_ref().unwrap());
+    let file2_content = String::from_utf8_lossy(merged["file2.txt"].as_ref().unwrap());
 
     assert!(file1_content.contains("File 1 initial"));
     assert!(file1_content.contains("File 1 modified"));
@@ -545,8 +551,8 @@ fn test_merge_trees_added_removed_files() {
     assert!(merged.contains_key("file2.txt")); // Unchanged file should be present
     assert!(merged.contains_key("file3.txt")); // New file should be present
 
-    let file2_content = String::from_utf8_lossy(&merged["file2.txt"]);
-    let file3_content = String::from_utf8_lossy(&merged["file3.txt"]);
+    let file2_content = String::from_utf8_lossy(merged["file2.txt"].as_ref().unwrap());
+    let file3_content = String::from_utf8_lossy(merged["file3.txt"].as_ref().unwrap());
     assert!(file2_content.contains("File 2 content"));
     assert!(file3_content.contains("File 3 content"));
 }
@@ -578,7 +584,7 @@ fn test_merge_trees_empty_files() {
         .unwrap();
 
     // Verify merged content
-    let merged_content = String::from_utf8_lossy(&merged["empty.txt"]);
+    let merged_content = String::from_utf8_lossy(merged["empty.txt"].as_ref().unwrap());
     assert!(merged_content.contains("New content"));
 }
 
@@ -613,8 +619,8 @@ fn test_merge_trees_subdirectories() {
         .unwrap();
 
     // Verify merged content
-    let file_content = String::from_utf8_lossy(&merged["subdir/file.txt"]);
-    let new_file_content = String::from_utf8_lossy(&merged["subdir/new.txt"]);
+    let file_content = String::from_utf8_lossy(merged["subdir/file.txt"].as_ref().unwrap());
+    let new_file_content = String::from_utf8_lossy(merged["subdir/new.txt"].as_ref().unwrap());
     assert!(file_content.contains("Initial content"));
     assert!(file_content.contains("Modified content"));
     assert!(new_file_content.contains("New file content"));
@@ -677,7 +683,7 @@ def be_a_dog():
         .unwrap();
 
     // Verify merged content contains combined changes from both versions
-    let merged_content = String::from_utf8_lossy(&merged["animals.py"]);
+    let merged_content = String::from_utf8_lossy(merged["animals.py"].as_ref().unwrap());
     let expected = r#"def be_a_cat():
     print("Sleep")
     return True

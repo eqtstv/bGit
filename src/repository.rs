@@ -9,7 +9,7 @@ pub const GIT_DIR: &str = ".bgit";
 pub const HEAD: &str = "HEAD";
 pub const MERGE_HEAD: &str = "MERGE_HEAD";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectType {
     Blob,
     Tree,
@@ -1038,27 +1038,83 @@ impl Repository {
         other_tree_oid: &str,
         base_tree_oid: Option<&str>,
     ) -> Result<(), String> {
-        // Empty the current directory
+        // Empty the current directory first
         self.empty_current_directory(Path::new(&self.worktree))?;
 
-        // Get the merged tree contents
+        // Get the merged tree contents (path -> Result<Content, IsDirectoryMarker>)
         let differ = Differ::new(self);
-        let merged_tree = differ.merge_trees(head_tree_oid, other_tree_oid, base_tree_oid)?;
+        let merged_tree_result =
+            differ.merge_trees(head_tree_oid, other_tree_oid, base_tree_oid)?;
 
-        // Write each file to the working directory
-        for (path, content) in merged_tree {
+        // Use a HashSet to track created directories to avoid redundant checks/creation attempts
+        let mut created_dirs = std::collections::HashSet::new();
+
+        // Sort paths to process parent directories before children implicitly
+        // This ensures that `a/b` is processed before `a/b/c`
+        let mut paths: Vec<_> = merged_tree_result.keys().cloned().collect();
+        paths.sort();
+
+        for path in paths {
             let full_path = Path::new(&self.worktree).join(&path);
+            let result_entry = merged_tree_result.get(&path).unwrap();
 
-            // Create parent directories if they don't exist
+            // Ensure parent directory exists
             if let Some(parent) = full_path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    format!("Failed to create directory {}: {}", parent.display(), e)
-                })?;
+                if !parent.starts_with(&self.worktree) {
+                    // Avoid trying to create outside worktree
+                    // This might happen with absolute paths, skip for safety
+                    eprintln!(
+                        "Warning: Skipping path outside worktree: {}",
+                        full_path.display()
+                    );
+                    continue;
+                }
+                // Only create if not already tracked and exists
+                if !created_dirs.contains(parent) && !parent.exists() {
+                    if parent.is_file() {
+                        return Err(format!(
+                            "Merge conflict: trying to create directory {} where a file exists.",
+                            parent.display()
+                        ));
+                    }
+                    fs::create_dir_all(parent).map_err(|e| {
+                        format!("Failed to create directory {}: {}", parent.display(), e)
+                    })?;
+                    created_dirs.insert(parent.to_path_buf()); // Track created dir
+                }
             }
 
-            // Write the file
-            std::fs::write(&full_path, content)
-                .map_err(|e| format!("Failed to write file {}: {}", full_path.display(), e))?;
+            match result_entry {
+                Ok(content) => {
+                    // It's a file
+                    if full_path.is_dir() {
+                        return Err(format!(
+                            "Merge conflict: trying to write file {} where a directory exists.",
+                            full_path.display()
+                        ));
+                    }
+                    // Write the file content
+                    fs::write(&full_path, content).map_err(|e| {
+                        format!("Failed to write file {}: {}", full_path.display(), e)
+                    })?;
+                }
+                Err(_) => {
+                    // It's a directory marker
+                    if full_path.is_file() {
+                        return Err(format!(
+                            "Merge conflict: trying to create directory {} where a file exists.",
+                            full_path.display()
+                        ));
+                    }
+                    // Ensure the directory itself exists if it wasn't created as a parent earlier
+                    if !created_dirs.contains(&full_path) && !full_path.exists() {
+                        fs::create_dir_all(&full_path).map_err(|e| {
+                            format!("Failed to create directory {}: {}", full_path.display(), e)
+                        })?;
+                        created_dirs.insert(full_path.to_path_buf());
+                    }
+                }
+            }
         }
 
         Ok(())

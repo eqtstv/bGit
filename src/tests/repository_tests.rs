@@ -2225,3 +2225,133 @@ fn test_merge_success() {
     // Verify MERGE_HEAD was removed
     assert!(!Path::new(&format!("{}/{}", repo.gitdir, MERGE_HEAD)).exists());
 }
+
+#[test]
+fn test_merge_complex_structure() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial structure
+    fs::create_dir_all(temp_dir.path().join("src/modules")).unwrap();
+    fs::create_dir_all(temp_dir.path().join("tests/unit")).unwrap();
+    fs::create_dir_all(temp_dir.path().join("docs/api")).unwrap();
+
+    // Create initial files
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/utils.rs"),
+        "pub fn helper() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/basic.rs"),
+        "#[test] fn test_basic() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/README.md"),
+        "# API Documentation",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"",
+    )
+    .unwrap();
+
+    // Initial commit
+    repo.create_commit("Initial commit with complex structure")
+        .unwrap();
+
+    // Create and checkout feature branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello from feature\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/new_feature.rs"),
+        "pub fn new_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/feature_test.rs"),
+        "#[test] fn test_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/feature.md"),
+        "# Feature Documentation",
+    )
+    .unwrap();
+    repo.create_commit("Feature branch changes").unwrap();
+
+    // Switch back to master and make different changes
+    repo.checkout("master").unwrap();
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello from master\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/master_feature.rs"),
+        "pub fn master_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/master_test.rs"),
+        "#[test] fn test_master() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/master.md"),
+        "# Master Documentation",
+    )
+    .unwrap();
+    repo.create_commit("Master branch changes").unwrap();
+
+    // Merge feature branch into master
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let main_content = fs::read_to_string(temp_dir.path().join("src/main.rs")).unwrap();
+    let utils_content = fs::read_to_string(temp_dir.path().join("src/modules/utils.rs")).unwrap();
+    let new_feature_content =
+        fs::read_to_string(temp_dir.path().join("src/modules/new_feature.rs")).unwrap();
+    let master_feature_content =
+        fs::read_to_string(temp_dir.path().join("src/modules/master_feature.rs")).unwrap();
+    let feature_test_content =
+        fs::read_to_string(temp_dir.path().join("tests/unit/feature_test.rs")).unwrap();
+    let master_test_content =
+        fs::read_to_string(temp_dir.path().join("tests/unit/master_test.rs")).unwrap();
+    let feature_doc_content =
+        fs::read_to_string(temp_dir.path().join("docs/api/feature.md")).unwrap();
+    let master_doc_content =
+        fs::read_to_string(temp_dir.path().join("docs/api/master.md")).unwrap();
+
+    // Verify all files exist and have correct content
+    assert!(
+        main_content.contains("Hello from master") || main_content.contains("Hello from feature")
+    );
+    assert_eq!(utils_content, "pub fn helper() { }");
+    assert_eq!(new_feature_content, "pub fn new_feature() { }");
+    assert_eq!(master_feature_content, "pub fn master_feature() { }");
+    assert_eq!(feature_test_content, "#[test] fn test_feature() { }");
+    assert_eq!(master_test_content, "#[test] fn test_master() { }");
+    assert_eq!(feature_doc_content, "# Feature Documentation");
+    assert_eq!(master_doc_content, "# Master Documentation");
+
+    // Verify directory structure is maintained
+    assert!(temp_dir.path().join("src/modules").is_dir());
+    assert!(temp_dir.path().join("tests/unit").is_dir());
+    assert!(temp_dir.path().join("docs/api").is_dir());
+}
