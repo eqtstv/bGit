@@ -1,6 +1,6 @@
 # bGit - A Git Implementation in Rust
 
-`bGit` is a Git implementation written in Rust. It provides a functional subset of Git's features, focusing on the core object model and essential commands.
+`bGit` is a version control system written in Rust, implementing core concepts of Git. It provides a functional subset of Git's features, focusing on the core object model and essential commands.
 
 ## Core Concepts Implemented
 
