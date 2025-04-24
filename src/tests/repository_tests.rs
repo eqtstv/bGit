@@ -1,7 +1,8 @@
-use crate::repository::{GIT_DIR, HEAD, ObjectType, RefValue, Repository};
+use crate::repository::{GIT_DIR, HEAD, MERGE_HEAD, ObjectType, RefValue, Repository};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use tempfile::tempdir;
 
 #[test]
 fn test_repository_init_success() {
@@ -695,7 +696,7 @@ fn test_get_commit() {
     // Get and verify commit
     let commit = repo.get_commit(&commit_hash).unwrap();
     assert_eq!(commit.message, commit_message);
-    assert!(commit.parent.is_none());
+    assert!(commit.parents.is_empty());
     assert!(!commit.timestamp.is_empty());
     assert!(!commit.tree.is_empty());
 
@@ -706,7 +707,7 @@ fn test_get_commit() {
     // Get and verify second commit
     let second_commit = repo.get_commit(&second_hash).unwrap();
     assert_eq!(second_commit.message, second_message);
-    assert_eq!(second_commit.parent.unwrap(), commit_hash);
+    assert_eq!(second_commit.parents[0], commit_hash);
     assert!(!second_commit.timestamp.is_empty());
     assert!(!second_commit.tree.is_empty());
 
@@ -749,15 +750,15 @@ fn test_log() {
     // Verify commit data
     let third_commit = repo.get_commit(&third_hash).unwrap();
     assert_eq!(third_commit.message, third_message);
-    assert_eq!(third_commit.parent.unwrap(), second_hash);
+    assert_eq!(third_commit.parents, vec![second_hash.clone()]);
 
     let second_commit = repo.get_commit(&second_hash).unwrap();
     assert_eq!(second_commit.message, second_message);
-    assert_eq!(second_commit.parent.unwrap(), first_hash);
+    assert_eq!(second_commit.parents, vec![first_hash.clone()]);
 
     let first_commit = repo.get_commit(&first_hash).unwrap();
     assert_eq!(first_commit.message, first_message);
-    assert!(first_commit.parent.is_none());
+    assert!(first_commit.parents.is_empty());
 }
 
 #[test]
@@ -1080,7 +1081,7 @@ fn test_first_commit_handling() {
 
     // Verify commit has no parent
     let commit = repo.get_commit(&commit_hash).unwrap();
-    assert!(commit.parent.is_none());
+    assert!(commit.parents.is_empty());
     assert!(!commit.tree.is_empty());
 
     // Verify log works now
@@ -1128,7 +1129,7 @@ fn test_empty_to_committed_transition() {
 
     // Verify second commit has first commit as parent
     let second_commit = repo.get_commit(&second_commit_hash).unwrap();
-    assert_eq!(second_commit.parent.unwrap(), first_commit_hash);
+    assert_eq!(second_commit.parents, vec![first_commit_hash.clone()]);
 }
 
 #[test]
@@ -1944,4 +1945,537 @@ fn test_show_first_commit() {
 
     // Show first commit (should work even though it has no parent)
     assert!(repo.show(&first_commit).is_ok());
+}
+
+#[test]
+fn test_delete_ref_branch() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Create a branch
+    repo.create_branch("test-branch", Some(commit_hash))
+        .unwrap();
+
+    // Verify branch exists
+    assert!(repo.is_branch("test-branch").unwrap());
+
+    // Delete the branch
+    repo.delete_ref("refs/heads/test-branch", false).unwrap();
+
+    // Verify branch is deleted
+    assert!(!repo.is_branch("test-branch").unwrap());
+}
+
+#[test]
+fn test_delete_ref_tag() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Create a tag
+    repo.create_tag("v1.0", &commit_hash).unwrap();
+
+    // Verify tag exists
+    let refs = repo.iter_refs("refs/tags/").unwrap();
+    assert!(refs.iter().any(|(name, _)| name == "refs/tags/v1.0"));
+
+    // Delete the tag
+    repo.delete_ref("refs/tags/v1.0", false).unwrap();
+
+    // Verify tag is deleted
+    let refs = repo.iter_refs("refs/tags/").unwrap();
+    assert!(!refs.iter().any(|(name, _)| name == "refs/tags/v1.0"));
+}
+
+#[test]
+fn test_delete_ref_head() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let _commit_hash = repo.create_commit("First commit").unwrap();
+
+    // Verify HEAD exists
+    let head_ref = repo.get_ref("HEAD", false).unwrap();
+    assert!(head_ref.value.starts_with("ref: refs/heads/"));
+
+    // Delete HEAD
+    repo.delete_ref("HEAD", false).unwrap();
+
+    // Verify HEAD is deleted
+    assert!(repo.get_ref("HEAD", false).is_err());
+}
+
+#[test]
+fn test_delete_ref_nonexistent() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Try to delete a non-existent branch
+    let result = repo.delete_ref("refs/heads/nonexistent", false);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Failed to read refs/heads/nonexistent file")
+    );
+
+    // Try to delete a non-existent tag
+    let result = repo.delete_ref("refs/tags/nonexistent", false);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .contains("Failed to read refs/tags/nonexistent file")
+    );
+}
+
+#[test]
+fn test_get_merge_base() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create two branches from first commit
+    repo.create_branch("branch1", Some(first_commit.clone()))
+        .unwrap();
+    repo.create_branch("branch2", Some(first_commit.clone()))
+        .unwrap();
+
+    // Switch to branch1 and make changes
+    repo.checkout("branch1").unwrap();
+    fs::write(&test_file, "Branch1 content").unwrap();
+    let branch1_commit = repo.create_commit("Branch1 commit").unwrap();
+
+    // Switch to branch2 and make changes
+    repo.checkout("branch2").unwrap();
+    fs::write(&test_file, "Branch2 content").unwrap();
+    let branch2_commit = repo.create_commit("Branch2 commit").unwrap();
+
+    // Find merge base between branch1 and branch2
+    let merge_base = repo
+        .get_merge_base(&branch1_commit, &branch2_commit)
+        .unwrap();
+    assert_eq!(merge_base, first_commit);
+}
+
+#[test]
+fn test_get_merge_base_same_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit = repo.create_commit("First commit").unwrap();
+
+    // Find merge base between same commit
+    let merge_base = repo.get_merge_base(&commit, &commit).unwrap();
+    assert_eq!(merge_base, commit);
+}
+
+#[test]
+fn test_get_merge_base_ancestor() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let first_commit = repo.create_commit("First commit").unwrap();
+
+    // Create second commit
+    fs::write(&test_file, "Updated content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Find merge base between first and second commit
+    let merge_base = repo.get_merge_base(&first_commit, &second_commit).unwrap();
+    assert_eq!(merge_base, first_commit);
+}
+
+#[test]
+fn test_get_merge_base_invalid_commit() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let commit = repo.create_commit("First commit").unwrap();
+
+    // Try to find merge base with invalid commit
+    let result = repo.get_merge_base(&commit, "invalidhash");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Oid hash not found for"));
+}
+
+#[test]
+fn test_get_merge_base_different_branches() {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path().to_str().unwrap();
+
+    let repo = Repository::new(repo_path);
+    repo.init().unwrap();
+
+    // Create initial commit
+    let test_file = temp_dir.path().join("test.txt");
+    fs::write(&test_file, "Initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout branch1
+    repo.create_branch("branch1", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("branch1").unwrap();
+
+    // Make changes and commit in branch1
+    fs::write(&test_file, "Branch1 content").unwrap();
+    let commit1 = repo.create_commit("Branch1 commit").unwrap();
+
+    // Create and checkout branch2
+    repo.create_branch("branch2", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("branch2").unwrap();
+
+    // Make changes and commit in branch2
+    fs::write(&test_file, "Branch2 content").unwrap();
+    let commit2 = repo.create_commit("Branch2 commit").unwrap();
+
+    // Find merge base between the two commits
+    let merge_base = repo.get_merge_base(&commit1, &commit2).unwrap();
+    assert_eq!(merge_base, initial_commit);
+}
+
+#[test]
+fn test_merge_success() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master and make changes
+    repo.checkout("master").unwrap();
+    fs::write(temp_dir.path().join("file1.txt"), "master content").unwrap();
+    fs::write(temp_dir.path().join("file3.txt"), "new file in master").unwrap();
+    repo.create_commit("Master changes").unwrap();
+
+    // Merge feature branch into master
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+    let file3_content = fs::read_to_string(temp_dir.path().join("file3.txt")).unwrap();
+
+    // The merge should have resolved conflicts and kept all files
+    assert!(file1_content.contains("master content") || file1_content.contains("feature content"));
+    assert_eq!(file2_content, "new file in feature");
+    assert_eq!(file3_content, "new file in master");
+
+    // Verify MERGE_HEAD was removed
+    assert!(!Path::new(&format!("{}/{}", repo.gitdir, MERGE_HEAD)).exists());
+}
+
+#[test]
+fn test_merge_complex_structure() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial structure
+    fs::create_dir_all(temp_dir.path().join("src/modules")).unwrap();
+    fs::create_dir_all(temp_dir.path().join("tests/unit")).unwrap();
+    fs::create_dir_all(temp_dir.path().join("docs/api")).unwrap();
+
+    // Create initial files
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/utils.rs"),
+        "pub fn helper() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/basic.rs"),
+        "#[test] fn test_basic() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/README.md"),
+        "# API Documentation",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"",
+    )
+    .unwrap();
+
+    // Initial commit
+    repo.create_commit("Initial commit with complex structure")
+        .unwrap();
+
+    // Create and checkout feature branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello from feature\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/new_feature.rs"),
+        "pub fn new_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/feature_test.rs"),
+        "#[test] fn test_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/feature.md"),
+        "# Feature Documentation",
+    )
+    .unwrap();
+    repo.create_commit("Feature branch changes").unwrap();
+
+    // Switch back to master and make different changes
+    repo.checkout("master").unwrap();
+    fs::write(
+        temp_dir.path().join("src/main.rs"),
+        "fn main() { println!(\"Hello from master\"); }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("src/modules/master_feature.rs"),
+        "pub fn master_feature() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("tests/unit/master_test.rs"),
+        "#[test] fn test_master() { }",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir.path().join("docs/api/master.md"),
+        "# Master Documentation",
+    )
+    .unwrap();
+    repo.create_commit("Master branch changes").unwrap();
+
+    // Merge feature branch into master
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let main_content = fs::read_to_string(temp_dir.path().join("src/main.rs")).unwrap();
+    let utils_content = fs::read_to_string(temp_dir.path().join("src/modules/utils.rs")).unwrap();
+    let new_feature_content =
+        fs::read_to_string(temp_dir.path().join("src/modules/new_feature.rs")).unwrap();
+    let master_feature_content =
+        fs::read_to_string(temp_dir.path().join("src/modules/master_feature.rs")).unwrap();
+    let feature_test_content =
+        fs::read_to_string(temp_dir.path().join("tests/unit/feature_test.rs")).unwrap();
+    let master_test_content =
+        fs::read_to_string(temp_dir.path().join("tests/unit/master_test.rs")).unwrap();
+    let feature_doc_content =
+        fs::read_to_string(temp_dir.path().join("docs/api/feature.md")).unwrap();
+    let master_doc_content =
+        fs::read_to_string(temp_dir.path().join("docs/api/master.md")).unwrap();
+
+    // Verify all files exist and have correct content
+    assert!(
+        main_content.contains("Hello from master") || main_content.contains("Hello from feature")
+    );
+    assert_eq!(utils_content, "pub fn helper() { }");
+    assert_eq!(new_feature_content, "pub fn new_feature() { }");
+    assert_eq!(master_feature_content, "pub fn master_feature() { }");
+    assert_eq!(feature_test_content, "#[test] fn test_feature() { }");
+    assert_eq!(master_test_content, "#[test] fn test_master() { }");
+    assert_eq!(feature_doc_content, "# Feature Documentation");
+    assert_eq!(master_doc_content, "# Master Documentation");
+
+    // Verify directory structure is maintained
+    assert!(temp_dir.path().join("src/modules").is_dir());
+    assert!(temp_dir.path().join("tests/unit").is_dir());
+    assert!(temp_dir.path().join("docs/api").is_dir());
+}
+
+#[test]
+fn test_merge_fast_forward() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+
+    assert_eq!(file1_content, "feature content");
+    assert_eq!(file2_content, "new file in feature");
+
+    // Verify HEAD points to the feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, feature_commit);
+}
+
+#[test]
+fn test_merge_fast_forward_with_multiple_commits() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make multiple commits in feature branch
+    fs::write(temp_dir.path().join("file1.txt"), "feature content 1").unwrap();
+    let _commit1 = repo.create_commit("Feature commit 1").unwrap();
+
+    fs::write(temp_dir.path().join("file2.txt"), "new file in feature").unwrap();
+    let _commit2 = repo.create_commit("Feature commit 2").unwrap();
+
+    fs::write(temp_dir.path().join("file3.txt"), "another new file").unwrap();
+    let final_commit = repo.create_commit("Feature commit 3").unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    let file2_content = fs::read_to_string(temp_dir.path().join("file2.txt")).unwrap();
+    let file3_content = fs::read_to_string(temp_dir.path().join("file3.txt")).unwrap();
+
+    assert_eq!(file1_content, "feature content 1");
+    assert_eq!(file2_content, "new file in feature");
+    assert_eq!(file3_content, "another new file");
+
+    // Verify HEAD points to the final feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, final_commit);
+}
+
+#[test]
+fn test_merge_fast_forward_with_deleted_files() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with multiple files
+    fs::write(temp_dir.path().join("file1.txt"), "initial content 1").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "initial content 2").unwrap();
+    fs::write(temp_dir.path().join("file3.txt"), "initial content 3").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Delete some files and modify others in feature branch
+    fs::remove_file(temp_dir.path().join("file2.txt")).unwrap();
+    fs::write(temp_dir.path().join("file1.txt"), "modified content").unwrap();
+    let feature_commit = repo
+        .create_commit("Feature changes with deletions")
+        .unwrap();
+
+    // Switch back to master
+    repo.checkout("master").unwrap();
+
+    // Merge feature branch into master (should be fast-forward)
+    repo.merge("feature").unwrap();
+
+    // Verify the merged state
+    let file1_content = fs::read_to_string(temp_dir.path().join("file1.txt")).unwrap();
+    assert_eq!(file1_content, "modified content");
+    assert!(!temp_dir.path().join("file2.txt").exists());
+    assert!(temp_dir.path().join("file3.txt").exists());
+
+    // Verify HEAD points to the feature commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_eq!(head_ref.value, feature_commit);
 }

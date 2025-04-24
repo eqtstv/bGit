@@ -7,8 +7,9 @@ use crate::differ::Differ;
 
 pub const GIT_DIR: &str = ".bgit";
 pub const HEAD: &str = "HEAD";
+pub const MERGE_HEAD: &str = "MERGE_HEAD";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectType {
     Blob,
     Tree,
@@ -25,7 +26,7 @@ pub struct RefValue {
 pub struct Commit {
     pub _oid: String,
     pub tree: String,
-    pub parent: Option<String>,
+    pub parents: Vec<String>,
     pub timestamp: String,
     pub message: String,
 }
@@ -494,6 +495,16 @@ impl Repository {
             }
         }
 
+        // Merge HEAD
+        if let Ok(merge_head) = self.get_ref(MERGE_HEAD, true) {
+            commit_data.extend_from_slice(b"parent ");
+            commit_data.extend_from_slice(merge_head.value.as_bytes());
+            commit_data.extend_from_slice(b"\n");
+
+            // Remove MERGE_HEAD
+            self.delete_ref(MERGE_HEAD, false)?;
+        }
+
         // Add datetime
         let datetime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         commit_data.extend_from_slice(b"timestamp ");
@@ -580,6 +591,16 @@ impl Repository {
         }
     }
 
+    pub fn delete_ref(&self, ref_name: &str, deref: bool) -> Result<(), String> {
+        let ref_value = self.get_ref_internal(ref_name, deref)?;
+
+        let ref_path = format!("{}/{}", self.gitdir, ref_value.0);
+
+        fs::remove_file(&ref_path)
+            .map_err(|e| format!("Failed to delete {} file: {}", ref_name, e))?;
+        Ok(())
+    }
+
     pub fn get_commit(&self, hash: &str) -> Result<Commit, String> {
         // Get the raw commit data
         let hash = self.get_oid_hash(hash)?;
@@ -589,7 +610,7 @@ impl Repository {
 
         // Parse the commit data
         let mut tree = None;
-        let mut parent = None;
+        let mut parents = Vec::new();
         let mut timestamp = None;
         let mut message = String::new();
         let mut in_message = false;
@@ -609,7 +630,7 @@ impl Repository {
             if let Some(rest) = line.strip_prefix("tree ") {
                 tree = Some(rest.to_string());
             } else if let Some(rest) = line.strip_prefix("parent ") {
-                parent = Some(rest.to_string());
+                parents.push(rest.to_string());
             } else if let Some(rest) = line.strip_prefix("timestamp ") {
                 timestamp = Some(rest.to_string());
             }
@@ -625,7 +646,7 @@ impl Repository {
         Ok(Commit {
             _oid: hash,
             tree,
-            parent,
+            parents,
             timestamp,
             message,
         })
@@ -672,8 +693,10 @@ impl Repository {
             // Print commit information
             println!();
             println!("\x1b[33mcommit {}\x1b[0m", hash);
-            if let Some(parent) = &commit.parent {
-                println!("parent {}", parent);
+            if !commit.parents.is_empty() {
+                for parent in commit.parents {
+                    println!("parents {}", parent);
+                }
             }
             println!("tree {}", commit.tree);
             println!("Date:   {}", commit.timestamp);
@@ -860,8 +883,10 @@ impl Repository {
 
             let commit = self.get_commit(&oid_str)?;
 
-            if let Some(parent) = &commit.parent {
-                queue.push_back(parent.clone());
+            if !commit.parents.is_empty() {
+                for parent in commit.parents {
+                    queue.push_back(parent.clone());
+                }
             }
         }
 
@@ -968,6 +993,160 @@ impl Repository {
         Ok(())
     }
 
+    pub fn merge(&self, branch_name: &str) -> Result<(), String> {
+        // Get refs
+        let head_ref = self.get_ref(HEAD, true).unwrap();
+        let branch_ref = self
+            .get_ref(format!("refs/heads/{}", branch_name).as_str(), true)
+            .unwrap();
+
+        // Get head commits
+        let curr_head_commit = self.get_commit(&head_ref.value).unwrap();
+        let branch_head_commit = self.get_commit(&branch_ref.value).unwrap();
+        let base_commit = self
+            .get_commit(&self.get_merge_base(&curr_head_commit._oid, &branch_head_commit._oid)?)
+            .unwrap();
+
+        // Check if we can do a fast-forward merge
+        // If the base commit is the same as the current HEAD, we can do a fast-forward merge
+        if base_commit._oid == curr_head_commit._oid {
+            // Update the working directory to match the branch head commit
+            self.read_tree(&branch_head_commit.tree, Path::new(&self.worktree))?;
+
+            // Update the HEAD to point to the branch head commit
+            self.set_ref(
+                HEAD,
+                RefValue {
+                    value: branch_ref.value,
+                    is_symbolic: false,
+                },
+                false,
+            )?;
+            println!(
+                "Successfully merged branch {} into current branch.\nFast-forward merge, no need to commit.",
+                branch_name
+            );
+            return Ok(());
+        }
+
+        // If not a fast-forward merge, proceed with three-way merge
+        // Set MERGE_HEAD
+        self.set_ref(
+            MERGE_HEAD,
+            RefValue {
+                value: branch_ref.value,
+                is_symbolic: false,
+            },
+            false,
+        )?;
+
+        // Merge the trees
+        self.read_tree_merged(
+            &curr_head_commit.tree,
+            &branch_head_commit.tree,
+            Some(&base_commit.tree),
+        )?;
+
+        // TODO: Remove this later?
+        // Remove MERGE_HEAD after successful merge
+        self.delete_ref(MERGE_HEAD, false)?;
+
+        println!(
+            "Successfully merged branch {} into current branch.\nPlease commit the merge.",
+            branch_name
+        );
+
+        Ok(())
+    }
+
+    pub fn read_tree_merged(
+        &self,
+        head_tree_oid: &str,
+        other_tree_oid: &str,
+        base_tree_oid: Option<&str>,
+    ) -> Result<(), String> {
+        // Empty the current directory first
+        self.empty_current_directory(Path::new(&self.worktree))?;
+
+        // Get the merged tree contents (path -> Result<Content, IsDirectoryMarker>)
+        let differ = Differ::new(self);
+        let merged_tree_result =
+            differ.merge_trees(head_tree_oid, other_tree_oid, base_tree_oid)?;
+
+        // Use a HashSet to track created directories to avoid redundant checks/creation attempts
+        let mut created_dirs = std::collections::HashSet::new();
+
+        // Sort paths to process parent directories before children implicitly
+        // This ensures that `a/b` is processed before `a/b/c`
+        let mut paths: Vec<_> = merged_tree_result.keys().cloned().collect();
+        paths.sort();
+
+        for path in paths {
+            let full_path = Path::new(&self.worktree).join(&path);
+            let result_entry = merged_tree_result.get(&path).unwrap();
+
+            // Ensure parent directory exists
+            if let Some(parent) = full_path.parent() {
+                if !parent.starts_with(&self.worktree) {
+                    // Avoid trying to create outside worktree
+                    // This might happen with absolute paths, skip for safety
+                    eprintln!(
+                        "Warning: Skipping path outside worktree: {}",
+                        full_path.display()
+                    );
+                    continue;
+                }
+                // Only create if not already tracked and exists
+                if !created_dirs.contains(parent) && !parent.exists() {
+                    if parent.is_file() {
+                        return Err(format!(
+                            "Merge conflict: trying to create directory {} where a file exists.",
+                            parent.display()
+                        ));
+                    }
+                    fs::create_dir_all(parent).map_err(|e| {
+                        format!("Failed to create directory {}: {}", parent.display(), e)
+                    })?;
+                    created_dirs.insert(parent.to_path_buf()); // Track created dir
+                }
+            }
+
+            match result_entry {
+                Ok(content) => {
+                    // It's a file
+                    if full_path.is_dir() {
+                        return Err(format!(
+                            "Merge conflict: trying to write file {} where a directory exists.",
+                            full_path.display()
+                        ));
+                    }
+                    // Write the file content
+                    fs::write(&full_path, content).map_err(|e| {
+                        format!("Failed to write file {}: {}", full_path.display(), e)
+                    })?;
+                }
+                Err(_) => {
+                    // It's a directory marker
+                    if full_path.is_file() {
+                        return Err(format!(
+                            "Merge conflict: trying to create directory {} where a file exists.",
+                            full_path.display()
+                        ));
+                    }
+                    // Ensure the directory itself exists if it wasn't created as a parent earlier
+                    if !created_dirs.contains(&full_path) && !full_path.exists() {
+                        fs::create_dir_all(&full_path).map_err(|e| {
+                            format!("Failed to create directory {}: {}", full_path.display(), e)
+                        })?;
+                        created_dirs.insert(full_path.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn print_commit(&self, commit_hash: &str) -> Result<(), String> {
         let commit = self
             .get_commit(commit_hash)
@@ -975,8 +1154,10 @@ impl Repository {
 
         println!("Commit: {}", commit_hash);
         println!("Tree: {}", commit.tree);
-        if let Some(parent) = &commit.parent {
-            println!("Parent: {}", parent);
+        if !commit.parents.is_empty() {
+            for parent in commit.parents {
+                println!("Parent: {}", parent);
+            }
         } else {
             println!("Parent: None");
         }
@@ -993,14 +1174,16 @@ impl Repository {
 
         self.print_commit(commit_hash)?;
 
-        if let Some(parent) = &commit.parent {
-            let parent_commit = self
-                .get_commit(parent)
-                .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
+        if !commit.parents.is_empty() {
+            for parent in commit.parents {
+                let parent_commit = self
+                    .get_commit(&parent)
+                    .map_err(|_e| format!("Commit with hash: {} not found", parent))?;
 
-            let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
-            let colored_diff = Differ::colorize_diff(&diff);
-            println!("{}", colored_diff);
+                let diff = Differ::new(self).diff_trees(&parent_commit.tree, &commit.tree)?;
+                let colored_diff = Differ::colorize_diff(&diff);
+                println!("{}", colored_diff);
+            }
         }
 
         Ok(())
@@ -1011,10 +1194,66 @@ impl Repository {
         Ok(tree)
     }
 
-    pub fn diff(&self) -> Result<(), String> {
+    pub fn diff(&self) -> Result<String, String> {
+        // check if there is a HEAD
+        let head = self.get_ref(HEAD, false)?;
+        if head.value.is_empty() {
+            return Err("No commits found".to_string());
+        }
+
         let diff = Differ::new(self).diff_current_working_tree()?;
         let colored_diff = Differ::colorize_diff(&diff);
-        println!("{}", colored_diff);
-        Ok(())
+        Ok(colored_diff)
+    }
+
+    pub fn get_merge_base(&self, commit_hash1: &str, commit_hash2: &str) -> Result<String, String> {
+        // Validate both commit hashes
+        let commit1 = self.get_oid_hash(commit_hash1)?;
+        let commit2 = self.get_oid_hash(commit_hash2)?;
+
+        // If commits are the same, return that commit
+        if commit1 == commit2 {
+            return Ok(commit1);
+        }
+
+        // Get all ancestors of both commits
+        let ancestors1 = self.get_commit_ancestors(&commit1)?;
+        let ancestors2 = self.get_commit_ancestors(&commit2)?;
+
+        // Find the first common ancestor
+        for ancestor in &ancestors1 {
+            if ancestors2.contains(ancestor) {
+                return Ok(ancestor.clone());
+            }
+        }
+
+        // If no common ancestor is found, return an error
+        Err("No common ancestor found between commits".to_string())
+    }
+
+    fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
+        let mut ancestors = Vec::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(commit_hash.to_string());
+
+        while let Some(current) = queue.pop_front() {
+            // Skip if we've already processed this commit
+            if ancestors.contains(&current) {
+                continue;
+            }
+
+            // Add current commit to ancestors
+            ancestors.push(current.clone());
+
+            // Get the commit object
+            let commit = self.get_commit(&current)?;
+
+            // Add all parents to the queue
+            for parent in commit.parents {
+                queue.push_back(parent);
+            }
+        }
+
+        Ok(ancestors)
     }
 }

@@ -5,7 +5,7 @@ mod visualizer;
 
 use cli::Command;
 use differ::Differ;
-use repository::{ObjectType, Repository};
+use repository::{MERGE_HEAD, ObjectType, Repository};
 use std::fs;
 use std::path::Path;
 use visualizer::Visualizer;
@@ -152,6 +152,11 @@ fn main() {
                 println!("On branch {}", branch.unwrap());
             }
 
+            let merge_head = repo.get_ref(MERGE_HEAD, true).unwrap();
+            if !merge_head.value.is_empty() {
+                println!("Merging with {}", merge_head.value);
+            }
+
             println!("\nCurrent changes:");
             for file in changed_files {
                 println!("{}", file);
@@ -172,6 +177,19 @@ fn main() {
             }
         },
         Command::Diff => match repo.diff() {
+            Ok(diff) => {
+                if diff.is_empty() {
+                    println!("No changes");
+                } else {
+                    println!("{}", diff);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Command::Merge(branch_name) => match repo.merge(&branch_name) {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("Error: {}", e);
