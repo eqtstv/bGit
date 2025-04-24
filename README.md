@@ -109,7 +109,7 @@ The following commands are available:
 
 - `status`
 
-  - (Likely intended functionality, check implementation) Shows the status of the working directory - changed files, untracked files etc.
+  - Shows the status of the working directory - changed files, untracked files etc.
   - Usage: `cargo run -- status`
 
 - `reset <commit_hash>`
