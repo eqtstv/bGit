@@ -129,7 +129,9 @@ The following commands are available:
 
 - **`merge <branch_name>`**
 
-  - Performs a three-way merge of the specified `<branch_name>` into the current branch (HEAD). Uses the external `diff3` command. Creates merge commit parents if applicable.
+  - Performs a merge of the specified `<branch_name>` into the current branch (HEAD). The merge can be either:
+    - **Fast-forward merge**: When the target branch's HEAD is a direct ancestor of the current HEAD, or when the base commit equals the current HEAD. In this case, the current branch is simply updated to point to the target branch's HEAD.
+    - **Three-way merge**: When there are divergent changes, a three-way merge is performed using the common ancestor as the base. Creates merge commit parents if applicable.
   - Usage: `cargo run -- merge <other_branch_name>`
 
 - **`iter-refs`**
