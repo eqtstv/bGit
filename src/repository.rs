@@ -1231,7 +1231,7 @@ impl Repository {
         Err("No common ancestor found between commits".to_string())
     }
 
-    fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
+    pub fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
         let mut ancestors = Vec::new();
         let mut queue = VecDeque::new();
         queue.push_back(commit_hash.to_string());

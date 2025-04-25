@@ -2502,7 +2502,7 @@ fn test_rebase_simple() {
     // Switch back to master and make changes
     repo.checkout("master").unwrap();
     fs::write(temp_dir.path().join("master_file.txt"), "master content").unwrap();
-    let _master_commit = repo.create_commit("Master changes").unwrap();
+    let master_commit = repo.create_commit("Master changes").unwrap();
 
     // Rebase feature onto master
     repo.checkout("feature").unwrap();
@@ -2518,6 +2518,15 @@ fn test_rebase_simple() {
     // Verify feature branch points to new commit
     let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
     assert_ne!(feature_ref.value, feature_commit);
+
+    // Verify the new commits structure
+    let new_commit = repo.get_commit(&feature_ref.value).unwrap();
+    let ancestors = repo.get_commit_ancestors(&new_commit._oid).unwrap();
+
+    assert_eq!(ancestors.len(), 3);
+    assert_eq!(ancestors[2], initial_commit);
+    assert_eq!(ancestors[1], master_commit);
+    assert_eq!(ancestors[0], repo.get_ref(HEAD, true).unwrap().value);
 }
 
 #[test]
@@ -2528,7 +2537,7 @@ fn test_rebase_multiple_commits() {
 
     // Create initial commit with a base file
     fs::write(temp_dir.path().join("base.txt"), "base content").unwrap();
-    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
 
     // Create and checkout feature branch
     repo.create_branch("feature", None).unwrap();
@@ -2563,7 +2572,7 @@ fn test_rebase_multiple_commits() {
     repo.checkout("master").unwrap();
     fs::create_dir_all(temp_dir.path().join("master")).unwrap();
     fs::write(temp_dir.path().join("master/file.txt"), "master commit 1").unwrap();
-    let _master_commit = repo.create_commit("Master commit 1").unwrap();
+    let master_commit = repo.create_commit("Master commit 1").unwrap();
 
     // Rebase feature onto master
     repo.checkout("feature").unwrap();
@@ -2592,6 +2601,16 @@ fn test_rebase_multiple_commits() {
     // Verify feature branch points to new commit
     let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
     assert_ne!(feature_ref.value, feature_commit);
+
+    // Verify the new commits structure
+    let new_commit = repo.get_commit(&feature_ref.value).unwrap();
+    let ancestors = repo.get_commit_ancestors(&new_commit._oid).unwrap();
+
+    assert_eq!(ancestors.len(), 5);
+    assert_eq!(ancestors[4], initial_commit);
+    assert_eq!(ancestors[3], master_commit);
+    // New commits with different hashes
+    assert_eq!(ancestors[0], repo.get_ref(HEAD, true).unwrap().value);
 }
 
 #[test]
