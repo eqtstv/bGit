@@ -147,12 +147,12 @@ The following commands are available:
 
 - **`iter-refs`**
 
-  - (Likely internal or debug command) Iterates and prints all references found in the `.bgit/refs` directory.
+  - Iterates and prints all references found in the `.bgit/refs` directory.
   - Usage: `cargo run -- iter-refs`
 
 - **`visualize`**
 
-  - (Likely internal or debug command) Potentially generates a visualization of the commit graph.
+  - Generates a visualization of the commit graph.
   - Usage: `cargo run -- visualize`
 
 ## Project Structure
