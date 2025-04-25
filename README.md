@@ -59,11 +59,6 @@ The following commands are available:
   - Shows the status of the working directory - changed files, untracked files etc.
   - Usage: `cargo run -- status`
 
-- **`add`**
-
-  - Stages changes for the next commit.
-  - Usage: `cargo run -- add <file_path>`
-
 - **`commit <message>`**
 
   - Creates a new commit object. It generates a tree from the current working directory, finds the current HEAD commit to use as a parent, and combines them with the provided commit message and timestamp. Prints the new commit hash.
