@@ -1231,7 +1231,7 @@ impl Repository {
         Err("No common ancestor found between commits".to_string())
     }
 
-    fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
+    pub fn get_commit_ancestors(&self, commit_hash: &str) -> Result<Vec<String>, String> {
         let mut ancestors = Vec::new();
         let mut queue = VecDeque::new();
         queue.push_back(commit_hash.to_string());
@@ -1255,5 +1255,83 @@ impl Repository {
         }
 
         Ok(ancestors)
+    }
+
+    pub fn rebase(&self, target: &str) -> Result<(), String> {
+        // 1. Store original branch state (for potential abort)
+        let original_head = self.get_ref(HEAD, true)?;
+        let original_branch = self.get_branch_name()?;
+
+        // 2. Get target commit and current HEAD
+        let target_oid = self.get_oid_hash(target)?;
+        let current_head_oid = self.get_oid_hash("HEAD")?;
+
+        // 3. Find common ancestor
+        let base_commit = self.get_merge_base(&current_head_oid, &target_oid)?;
+
+        // 4. Collect commits to rebase (only those unique to our branch)
+        let commits_to_rebase = self.iter_commits_and_parents(vec![current_head_oid.clone()])?;
+        let base_commits = self.iter_commits_and_parents(vec![base_commit.clone()])?;
+        let commits_to_rebase: Vec<String> = commits_to_rebase
+            .into_iter()
+            .filter(|commit| !base_commits.contains(commit))
+            .collect();
+
+        // 5. Switch to target commit (detached HEAD)
+        self.checkout(&target_oid)?;
+
+        // 6. Apply each commit on top of the target
+        let mut new_base = target_oid;
+        for commit_oid in commits_to_rebase.iter().rev() {
+            let commit = self.get_commit(commit_oid)?;
+
+            // Get the tree objects
+            let target_tree = self.get_commit(&new_base)?.tree;
+            let commit_tree = commit.tree;
+            let base_tree = self.get_commit(&base_commit)?.tree;
+
+            // Apply the changes from this commit
+            self.read_tree_merged(&commit_tree, &target_tree, Some(&base_tree))?;
+
+            // Create new commit using the existing function
+            new_base = self.create_commit(&commit.message)?;
+        }
+
+        // 7. Update branch reference if we were on a branch
+        if let Some(branch_name) = original_branch.clone() {
+            self.set_ref(
+                format!("refs/heads/{}", branch_name).as_str(),
+                RefValue {
+                    value: new_base.clone(),
+                    is_symbolic: false,
+                },
+                true,
+            )?;
+        }
+
+        // 8. Update HEAD
+        if original_head.is_symbolic {
+            self.set_ref(
+                HEAD,
+                RefValue {
+                    value: format!("ref: refs/heads/{}", original_branch.unwrap()),
+                    is_symbolic: true,
+                },
+                false,
+            )?;
+        } else {
+            self.set_ref(
+                HEAD,
+                RefValue {
+                    value: new_base,
+                    is_symbolic: false,
+                },
+                false,
+            )?;
+        }
+
+        println!("Successfully rebased branch onto target {}.", target);
+
+        Ok(())
     }
 }

@@ -19,6 +19,7 @@ pub enum Command {
     Show(String),
     Diff,
     Merge(String),
+    Rebase(String),
     Unknown(String),
 }
 
@@ -115,6 +116,14 @@ impl Command {
                     return Command::Unknown("No branch name provided for merge".to_string());
                 }
                 Command::Merge(args[1].clone())
+            }
+            "rebase" => {
+                if args.len() < 2 {
+                    return Command::Unknown(
+                        "No target branch/commit provided for rebase".to_string(),
+                    );
+                }
+                Command::Rebase(args[1].clone())
             }
             cmd => Command::Unknown(format!("Unknown command: {}", cmd)),
         }
