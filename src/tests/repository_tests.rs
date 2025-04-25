@@ -2479,3 +2479,43 @@ fn test_merge_fast_forward_with_deleted_files() {
     let head_ref = repo.get_ref(HEAD, true).unwrap();
     assert_eq!(head_ref.value, feature_commit);
 }
+
+#[test]
+fn test_rebase_simple() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout a new branch
+    repo.create_branch("feature", Some(initial_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch
+    fs::write(temp_dir.path().join("feature_file.txt"), "feature content").unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master and make changes
+    repo.checkout("master").unwrap();
+    fs::write(temp_dir.path().join("master_file.txt"), "master content").unwrap();
+    let _master_commit = repo.create_commit("Master changes").unwrap();
+
+    // Rebase feature onto master
+    repo.checkout("feature").unwrap();
+    repo.rebase("master").unwrap();
+
+    // Verify the rebased state
+    let feature_content = fs::read_to_string(temp_dir.path().join("feature_file.txt")).unwrap();
+    let master_content = fs::read_to_string(temp_dir.path().join("master_file.txt")).unwrap();
+
+    assert_eq!(feature_content, "feature content");
+    assert_eq!(master_content, "master content");
+
+    // Verify feature branch points to new commit
+    let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
+    assert_ne!(feature_ref.value, feature_commit);
+}
