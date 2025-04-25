@@ -152,9 +152,10 @@ fn main() {
                 println!("On branch {}", branch.unwrap());
             }
 
-            let merge_head = repo.get_ref(MERGE_HEAD, true).unwrap();
-            if !merge_head.value.is_empty() {
-                println!("Merging with {}", merge_head.value);
+            if let Ok(merge_head) = repo.get_ref(MERGE_HEAD, true) {
+                if !merge_head.value.is_empty() {
+                    println!("Merging with {}", merge_head.value);
+                }
             }
 
             println!("\nCurrent changes:");
