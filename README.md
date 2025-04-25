@@ -99,6 +99,17 @@ The following commands are available:
     - **Three-way merge**: When there are divergent changes, a three-way merge is performed using the common ancestor as the base. Creates merge commit parents if applicable.
   - Usage: `cargo run -- merge <other_branch_name>`
 
+- **`rebase <target>`**
+
+  - Reapplies the commits from the current branch on top of the specified target commit or branch. This creates a linear history by moving the current branch's commits to the tip of the target branch.
+  - The process:
+    1. Finds the common ancestor between current branch and target
+    2. Temporarily removes the current branch's commits
+    3. Switches to the target commit
+    4. Reapplies the current branch's commits one by one
+    5. Updates the current branch to point to the new commit chain
+  - Usage: `cargo run -- rebase <target_branch_or_commit>`
+
 - **`reset <commit_hash>`**
 
   - Resets the current branch HEAD to the specified `<commit_hash>` and updates the working directory to match (hard reset behavior).
