@@ -2519,3 +2519,265 @@ fn test_rebase_simple() {
     let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
     assert_ne!(feature_ref.value, feature_commit);
 }
+
+#[test]
+fn test_rebase_multiple_commits() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with a base file
+    fs::write(temp_dir.path().join("base.txt"), "base content").unwrap();
+    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout feature branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make multiple commits in feature branch, each in its own directory
+    fs::create_dir_all(temp_dir.path().join("feature/commit1")).unwrap();
+    fs::write(
+        temp_dir.path().join("feature/commit1/file.txt"),
+        "feature commit 1",
+    )
+    .unwrap();
+    let _commit1 = repo.create_commit("Feature commit 1").unwrap();
+
+    fs::create_dir_all(temp_dir.path().join("feature/commit2")).unwrap();
+    fs::write(
+        temp_dir.path().join("feature/commit2/file.txt"),
+        "feature commit 2",
+    )
+    .unwrap();
+    let _commit2 = repo.create_commit("Feature commit 2").unwrap();
+
+    fs::create_dir_all(temp_dir.path().join("feature/commit3")).unwrap();
+    fs::write(
+        temp_dir.path().join("feature/commit3/file.txt"),
+        "feature commit 3",
+    )
+    .unwrap();
+    let feature_commit = repo.create_commit("Feature commit 3").unwrap();
+
+    // Switch back to master and make changes in a different directory
+    repo.checkout("master").unwrap();
+    fs::create_dir_all(temp_dir.path().join("master")).unwrap();
+    fs::write(temp_dir.path().join("master/file.txt"), "master commit 1").unwrap();
+    let _master_commit = repo.create_commit("Master commit 1").unwrap();
+
+    // Rebase feature onto master
+    repo.checkout("feature").unwrap();
+    repo.rebase("master").unwrap();
+
+    // Verify all files exist with correct content
+    let feature1_content =
+        fs::read_to_string(temp_dir.path().join("feature/commit1/file.txt")).unwrap();
+    let feature2_content =
+        fs::read_to_string(temp_dir.path().join("feature/commit2/file.txt")).unwrap();
+    let feature3_content =
+        fs::read_to_string(temp_dir.path().join("feature/commit3/file.txt")).unwrap();
+    let master_content = fs::read_to_string(temp_dir.path().join("master/file.txt")).unwrap();
+
+    assert_eq!(
+        feature1_content,
+        "<<<<<<< HEAD\nfeature commit 1||||||| BASE\n=======\n<<<<<<< BASE\n=======\nfeature commit 1>>>>>>> MERGE_HEAD\n>>>>>>> MERGE_HEAD\n"
+    );
+    assert_eq!(
+        feature2_content,
+        "<<<<<<< BASE\n=======\nfeature commit 2>>>>>>> MERGE_HEAD\n"
+    );
+    assert_eq!(feature3_content, "feature commit 3");
+    assert_eq!(master_content, "master commit 1");
+
+    // Verify feature branch points to new commit
+    let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
+    assert_ne!(feature_ref.value, feature_commit);
+}
+
+#[test]
+fn test_rebase_detached_head() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit
+    fs::write(temp_dir.path().join("file1.txt"), "initial content").unwrap();
+    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create second commit
+    fs::write(temp_dir.path().join("file2.txt"), "second content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Create third commit
+    fs::write(temp_dir.path().join("file3.txt"), "third content").unwrap();
+    let third_commit = repo.create_commit("Third commit").unwrap();
+
+    // Checkout second commit (detached HEAD)
+    repo.checkout(&second_commit).unwrap();
+
+    // Make changes in detached HEAD state
+    fs::write(temp_dir.path().join("detached.txt"), "detached changes").unwrap();
+    let detached_commit = repo.create_commit("Detached HEAD changes").unwrap();
+
+    // Rebase detached HEAD onto third commit
+    repo.rebase(&third_commit).unwrap();
+
+    // Verify the rebased state
+    let detached_content = fs::read_to_string(temp_dir.path().join("detached.txt")).unwrap();
+    let third_content = fs::read_to_string(temp_dir.path().join("file3.txt")).unwrap();
+
+    assert_eq!(detached_content, "detached changes");
+    assert_eq!(third_content, "third content");
+
+    // Verify HEAD points to new commit
+    let head_ref = repo.get_ref(HEAD, true).unwrap();
+    assert_ne!(head_ref.value, detached_commit);
+}
+
+#[test]
+fn test_rebase_onto_ancestor() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with a base file
+    fs::write(temp_dir.path().join("base.txt"), "base content").unwrap();
+    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create second commit in a different directory
+    fs::create_dir_all(temp_dir.path().join("second")).unwrap();
+    fs::write(temp_dir.path().join("second/file.txt"), "second content").unwrap();
+    let second_commit = repo.create_commit("Second commit").unwrap();
+
+    // Create feature branch at second commit
+    repo.create_branch("feature", Some(second_commit.clone()))
+        .unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch in its own directory
+    fs::create_dir_all(temp_dir.path().join("feature")).unwrap();
+    fs::write(temp_dir.path().join("feature/file.txt"), "feature content").unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Try to rebase onto initial commit (ancestor)
+    repo.rebase(&_initial_commit).unwrap();
+
+    // Verify the rebased state
+    let feature_content = fs::read_to_string(temp_dir.path().join("feature/file.txt")).unwrap();
+    let second_content = fs::read_to_string(temp_dir.path().join("second/file.txt")).unwrap();
+
+    assert_eq!(feature_content, "feature content");
+    assert_eq!(
+        second_content,
+        "<<<<<<< BASE\n=======\nsecond content>>>>>>> MERGE_HEAD\n"
+    );
+
+    // Verify feature branch points to new commit
+    let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
+    assert_ne!(feature_ref.value, feature_commit);
+}
+
+#[test]
+fn test_rebase_with_directory_structure() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with base structure
+    fs::create_dir_all(temp_dir.path().join("base")).unwrap();
+    fs::write(temp_dir.path().join("base/main.rs"), "fn main() {}").unwrap();
+    fs::write(temp_dir.path().join("base/utils.rs"), "pub fn helper() {}").unwrap();
+    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout feature branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch in its own directory
+    fs::create_dir_all(temp_dir.path().join("feature")).unwrap();
+    fs::write(
+        temp_dir.path().join("feature/mod.rs"),
+        "pub fn feature() {}",
+    )
+    .unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master and make changes in its own directory
+    repo.checkout("master").unwrap();
+    fs::create_dir_all(temp_dir.path().join("master")).unwrap();
+    fs::write(temp_dir.path().join("master/mod.rs"), "pub fn master() {}").unwrap();
+    let _master_commit = repo.create_commit("Master changes").unwrap();
+
+    // Rebase feature onto master
+    repo.checkout("feature").unwrap();
+    repo.rebase("master").unwrap();
+
+    // Verify the rebased state
+    let main_content = fs::read_to_string(temp_dir.path().join("base/main.rs")).unwrap();
+    let utils_content = fs::read_to_string(temp_dir.path().join("base/utils.rs")).unwrap();
+    let feature_content = fs::read_to_string(temp_dir.path().join("feature/mod.rs")).unwrap();
+    let master_content = fs::read_to_string(temp_dir.path().join("master/mod.rs")).unwrap();
+
+    assert_eq!(main_content, "fn main() {}");
+    assert_eq!(utils_content, "pub fn helper() {}");
+    assert_eq!(feature_content, "pub fn feature() {}");
+    assert_eq!(master_content, "pub fn master() {}");
+
+    // Verify feature branch points to new commit
+    let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
+    assert_ne!(feature_ref.value, feature_commit);
+}
+
+#[test]
+fn test_rebase_with_conflicts() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::new(temp_dir.path().to_str().unwrap());
+    repo.init().unwrap();
+
+    // Create initial commit with a file that will be modified by both branches
+    fs::write(
+        temp_dir.path().join("shared.txt"),
+        "initial content\nline 2\nline 3",
+    )
+    .unwrap();
+    let _initial_commit = repo.create_commit("Initial commit").unwrap();
+
+    // Create and checkout feature branch
+    repo.create_branch("feature", None).unwrap();
+    repo.checkout("feature").unwrap();
+
+    // Make changes in feature branch that will conflict
+    fs::write(
+        temp_dir.path().join("shared.txt"),
+        "feature content\nline 2\nline 3\nfeature line 4",
+    )
+    .unwrap();
+    let feature_commit = repo.create_commit("Feature changes").unwrap();
+
+    // Switch back to master and make conflicting changes
+    repo.checkout("master").unwrap();
+    fs::write(
+        temp_dir.path().join("shared.txt"),
+        "master content\nline 2\nline 3\nmaster line 4",
+    )
+    .unwrap();
+    let _master_commit = repo.create_commit("Master changes").unwrap();
+
+    // Rebase feature onto master
+    repo.checkout("feature").unwrap();
+    repo.rebase("master").unwrap();
+
+    // Verify the rebased state with conflict markers
+    let shared_content = fs::read_to_string(temp_dir.path().join("shared.txt")).unwrap();
+    assert!(shared_content.contains("<<<<<<< HEAD"));
+    assert!(shared_content.contains("feature content"));
+    assert!(shared_content.contains("feature line 4"));
+    assert!(shared_content.contains("======="));
+    assert!(shared_content.contains("master content"));
+    assert!(shared_content.contains("master line 4"));
+    assert!(shared_content.contains(">>>>>>> MERGE_HEAD"));
+
+    // Verify feature branch points to new commit
+    let feature_ref = repo.get_ref("refs/heads/feature", true).unwrap();
+    assert_ne!(feature_ref.value, feature_commit);
+}

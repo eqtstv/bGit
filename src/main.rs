@@ -196,6 +196,13 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::Rebase(branch_name) => match repo.rebase(&branch_name) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Command::Unknown(msg) => {
             eprintln!("Error: {}", msg);
             std::process::exit(1);
